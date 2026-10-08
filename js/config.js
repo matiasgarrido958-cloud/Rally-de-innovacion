@@ -7,7 +7,7 @@
 // guardando todo solo en este navegador (sirve para probarla antes de configurar).
 window.APP_CONFIG = {
     SUPABASE_URL: 'https://dmaxljbdvctiwldibvll.supabase.co',
-    SUPABASE_ANON_KEY: '',
+    SUPABASE_ANON_KEY: 'sb_publishable_-4q0eodbjSEKs1_0XL8KnA_yi63WMdf',
     // Cuenta única del equipo (creada en Supabase → Authentication → Users).
     // Con esto la pantalla de login solo pide la contraseña.
     // Déjalo en '' para pedir correo y contraseña (usuarios individuales).
