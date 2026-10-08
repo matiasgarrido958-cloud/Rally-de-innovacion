@@ -6,7 +6,7 @@
 // Si SUPABASE_URL queda vacío, la página funciona en "modo local": sin login y
 // guardando todo solo en este navegador (sirve para probarla antes de configurar).
 window.APP_CONFIG = {
-    SUPABASE_URL: '',
+    SUPABASE_URL: 'https://dmaxljbdvctiwldibvll.supabase.co',
     SUPABASE_ANON_KEY: '',
     // Cuenta única del equipo (creada en Supabase → Authentication → Users).
     // Con esto la pantalla de login solo pide la contraseña.
