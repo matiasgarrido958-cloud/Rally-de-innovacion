@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rally de Innovación — Workspace</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230B2A6F'/%3E%3Cpath d='M9 25V7l14 5-9 3.5V25z' fill='%23F28C28'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+    <link rel="stylesheet" href="css/styles.css?v=202610080100">
+    <script>
+        // Aplica el modo claro/oscuro guardado antes de pintar la página (evita parpadeo).
+        (function () {
+            try {
+                var mode = localStorage.getItem('rally-theme');
+                if (mode === 'light' || mode === 'dark') document.documentElement.dataset.theme = mode;
+            } catch (e) {}
+        })();
+    </script>
+</head>
+<body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-flag" viewBox="0 0 24 24"><path fill="currentColor" d="M5 22V3h1.8l.4 1H19l-2.5 5 2.5 5H8v8z"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></symbol>
+        <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path fill="currentColor" d="M12 3.5a8.5 8.5 0 0 1 0 17z"/></symbol>
+        <symbol id="i-archive" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 4h18v4H3zM5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+    </svg>
+
+    <div class="login-screen" id="loginScreen" hidden>
+        <form class="login-card" id="loginForm">
+            <div class="login-brand">
+                <div class="login-mark"><svg><use href="#i-flag"/></svg></div>
+                <div class="tagline">Rally Latinoamericano <span>·</span> Innovación 2026</div>
+            </div>
+            <h1>Workspace del equipo</h1>
+            <p class="lead">Sede UDLA · Santiago, Chile</p>
+            <div class="form-group" id="loginEmailGroup">
+                <label class="form-label" for="loginEmail">Correo</label>
+                <input class="form-input" id="loginEmail" type="email" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="loginPassword">Contraseña</label>
+                <input class="form-input" id="loginPassword" type="password" autocomplete="current-password" required>
+            </div>
+            <p class="login-error" id="loginError" hidden></p>
+            <button class="btn btn-primary" type="submit" id="btnLogin">Entrar</button>
+        </form>
+    </div>
+
+    <div id="appScreen" hidden>
+        <div class="topbar">
+            <div class="topbar-inner">
+                <div class="brand">
+                    <div class="brand-mark"><svg><use href="#i-flag"/></svg></div>
+                    <div>
+                        <div class="brand-name" id="brandName">Rally de Innovación 2026</div>
+                        <div class="brand-sub">Workspace · Sede UDLA</div>
+                    </div>
+                </div>
+                <div class="topbar-actions">
+                    <span class="clock" id="clock" title="Hora del Rally"></span>
+                    <button class="btn btn-ghost" id="btnTheme" title="Cambiar modo claro / oscuro"><svg><use href="#i-theme"/></svg></button>
+                    <button class="user-chip" id="userChip" title="Cambiar el nombre con que firmas los cambios en este navegador"><span class="avatar" id="userAvatar"></span><span class="user-name" id="userName"></span></button>
+                    <button class="btn btn-ghost" id="btnLogout" title="Salir"><svg><use href="#i-logout"/></svg><span class="btn-logout-label">Salir</span></button>
+                </div>
+            </div>
+            <nav class="views" id="views" aria-label="Secciones"></nav>
+        </div>
+
+        <div class="local-banner" id="localBanner" hidden>
+            Modo local: los datos se guardan solo en este navegador. Configura Supabase en <code>js/config.js</code> para trabajar en equipo.
+        </div>
+
+        <main class="container" id="content"></main>
+
+        <footer class="inst-footer">
+            <div class="inst-footer-inner">
+                <span><strong>Rally Latinoamericano de Innovación 2026</strong> — Sede UDLA (Santiago, Chile)</span>
+                <span id="syncInfo"></span>
+            </div>
+        </footer>
+    </div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow" id="modalEyebrow"></div>
+                    <h2 class="modal-title" id="modalTitle"></h2>
+                </div>
+                <button class="modal-close" id="btnCloseModal" aria-label="Cerrar">×</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <div class="toast-stack" id="toasts"></div>
+
+    <script src="js/config.js?v=202610080100"></script>
+    <script src="js/lineamientos.js?v=202610080100"></script>
+    <script src="js/supabase.js?v=202610080100"></script>
+    <script src="js/app.js?v=202610080100"></script>
+    <script src="js/ideas.js?v=202610080100"></script>
+    <script src="js/vistas.js?v=202610080100"></script>
+    <script src="js/main.js?v=202610080100"></script>
+</body>
+</html>
