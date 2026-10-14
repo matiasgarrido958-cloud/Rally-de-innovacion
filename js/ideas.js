@@ -46,7 +46,7 @@ function ideas() {
 
 function blankIdeaData() {
     const data = { title: '', name: '', theme: '', beneficiary: '', owner: '', notes: '', status: 'banco',
-        filter: {}, validations: [], scores: {}, discard_reason: '', discarded_from: '' };
+        filter: {}, validations: [], scores: {}, ai_scores: {}, discard_reason: '', discarded_from: '' };
     FICHA_FLAT.forEach(f => { data[f.id] = ''; });
     return data;
 }
@@ -56,6 +56,7 @@ function ideaData(item) {
     if (!Array.isArray(data.validations)) data.validations = [];
     if (typeof data.filter !== 'object' || !data.filter) data.filter = {};
     if (typeof data.scores !== 'object' || !data.scores) data.scores = {};
+    if (typeof data.ai_scores !== 'object' || !data.ai_scores) data.ai_scores = {};
     return data;
 }
 
@@ -68,11 +69,24 @@ function nextIdeaId() {
     return `I-${String(max + 1).padStart(2, '0')}`;
 }
 
-// Promedio 1–5 de los criterios del jurado (null si falta alguno).
-function ideaScore(data) {
-    const values = L.CRITERIA.map(c => Number(data.scores[c.id])).filter(v => v >= 1 && v <= 5);
+// Promedio 1–5 de los criterios puntuados (null si no hay ninguno).
+function averageScore(criteria, scores) {
+    const values = criteria.map(c => Number(scores[c.id])).filter(v => v >= 1 && v <= 5);
     if (!values.length) return null;
     return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+}
+
+function ideaScore(data) {
+    return averageScore(L.CRITERIA, data.scores);
+}
+
+// Matriz de integración de IA: no entra en los requisitos de etapa.
+function ideaAiScore(data) {
+    return averageScore(L.AI_MATRIX, data.ai_scores);
+}
+
+function aiScoredCount(data) {
+    return L.AI_MATRIX.filter(c => Number(data.ai_scores[c.id]) >= 1).length;
 }
 
 function filterFailures(data) {
@@ -127,6 +141,7 @@ function ideaCard(item) {
     const stage = findOption(IDEA_ALL, data.status);
     const theme = findOption(L.THEMES, data.theme);
     const score = ideaScore(data);
+    const aiScore = ideaAiScore(data);
     let progress = '';
     if (data.status === 'descartada') {
         progress = `<div class="card-progress muted">Motivo: ${escapeHtml(data.discard_reason || 'sin motivo')}</div>`;
@@ -142,7 +157,10 @@ function ideaCard(item) {
             ${data.status === 'descartada' ? `<button class="card-delete" data-action="delete-idea" data-id="${escapeHtml(item.id)}" aria-label="Eliminar definitivamente" title="Eliminar definitivamente"><svg><use href="#i-trash"/></svg></button>` : ''}
             <div class="card-top">
                 <span class="card-id">${escapeHtml(item.id)}</span>
-                ${score !== null ? `<span class="chip outline score" title="Promedio de los criterios del jurado">★ ${score}</span>` : ''}
+                <span class="card-scores">
+                    ${aiScore !== null ? `<span class="chip outline score ai" title="Matriz de integración de IA: promedio de ${aiScoredCount(data)} de ${L.AI_MATRIX.length} criterios">IA ${aiScore}</span>` : ''}
+                    ${score !== null ? `<span class="chip outline score" title="Promedio de los criterios del jurado">★ ${score}</span>` : ''}
+                </span>
             </div>
             <div class="card-title ${data.title ? '' : 'untitled'}">${escapeHtml(data.name || data.title) || 'Sin título'}</div>
             ${data.name && data.title ? `<div class="card-sub">${escapeHtml(data.title)}</div>` : ''}
@@ -294,6 +312,22 @@ function sectionValidation(d, open) {
     `, ideaRequirements(d, 'elegida').length === 0);
 }
 
+function sectionAiMatrix(d, open) {
+    const score = ideaAiScore(d);
+    const scored = aiScoredCount(d);
+    return fold('Matriz de integración de IA', open, `
+        <p class="form-hint">Evalúa cómo la idea integra la IA. Es opcional y no bloquea el avance de etapas.</p>
+        <div class="subgroup">
+            <div class="subgroup-title">Puntaje 1–5 por criterio ${score !== null ? `<span class="score-big ai" title="Promedio de ${scored} de ${L.AI_MATRIX.length} criterios">IA ${score}</span>` : ''}</div>
+            ${L.AI_MATRIX.map(c => `
+                <div class="filter-row">
+                    <span>${escapeHtml(c.label)}${c.hint ? `<span class="form-hint">${escapeHtml(c.hint)}</span>` : ''}</span>
+                    ${pills(`ai_scores.${c.id}`, [1, 2, 3, 4, 5].map(n => ({ id: String(n), label: String(n), color: 'var(--k-s2)' })), String(d.ai_scores[c.id] || ''))}
+                </div>`).join('')}
+        </div>
+    `, scored === L.AI_MATRIX.length);
+}
+
 function renderModalBody() {
     const d = draft;
     const stage = Math.max(0, ideaStageIndex(d.status));
@@ -317,7 +351,8 @@ function renderModalBody() {
             </div>
         </div>
         <div class="req-box" id="reqBox"></div>
-        ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}`;
+        ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}
+        ${reached >= 2 ? sectionAiMatrix(d, false) : ''}`;
     updateRequirementsBox();
 }
 

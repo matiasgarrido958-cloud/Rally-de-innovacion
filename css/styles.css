@@ -240,6 +240,9 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
 .chip.outline { background: transparent; border-color: var(--border); color: var(--muted); font-weight: 600; }
 .chip.score { margin-left: auto; font-variant-numeric: tabular-nums; }
+.card-scores { margin-left: auto; display: inline-flex; gap: 6px; flex-shrink: 0; }
+.card-scores .chip.score { margin-left: 0; }
+.chip.outline.ai { color: var(--k-s2); border-color: color-mix(in srgb, var(--k-s2) 35%, var(--mix)); }
 
 .empty { grid-column: 1 / -1; padding: 48px 24px; text-align: center; color: var(--muted); border: 2px dashed var(--border); border-radius: var(--radius); }
 .empty-icon { font-size: 30px; margin-bottom: 8px; }
@@ -294,8 +297,10 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .subgroup { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .subgroup-title { font-size: 13px; font-weight: 800; color: var(--heading); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .score-big { font-size: 18px; color: var(--k-s4); }
+.score-big.ai { color: var(--k-s2); }
 .filter-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .filter-row > span { flex: 1; min-width: 200px; }
+.filter-row > span .form-hint { display: block; margin-top: 2px; }
 
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill { position: relative; }

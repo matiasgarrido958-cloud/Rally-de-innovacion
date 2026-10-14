@@ -36,6 +36,16 @@ window.LINEAMIENTOS = {
         { id: 'presentacion', label: 'Potencial de presentación' }
     ],
 
+    // Matriz de integración de IA (ficha de la idea): cada criterio se puntúa 1–5.
+    // Es solo de evaluación: no bloquea el avance de etapas.
+    AI_MATRIX: [
+        { id: 'datos', label: 'Uso de datos y privacidad', hint: 'Qué datos usa la IA, de dónde salen, si hay consentimiento y cómo se protegen. 1 = datos sensibles sin resguardo · 5 = datos mínimos, con consentimiento y protegidos.' },
+        { id: 'transparencia', label: 'Transparencia y explicabilidad', hint: 'Si el usuario sabe que hay IA y se puede explicar por qué entrega cada resultado. 1 = caja negra · 5 = resultados explicables y uso de IA declarado.' },
+        { id: 'supervision', label: 'Supervisión humana', hint: 'Si una persona revisa, corrige o puede anular las decisiones de la IA. 1 = decide sola · 5 = una persona valida las decisiones importantes.' },
+        { id: 'sesgos', label: 'Sesgos y equidad', hint: 'Riesgo de que la IA trate peor a algún grupo y cómo se detecta o corrige. 1 = riesgo alto sin control · 5 = riesgo bajo o con medidas claras.' },
+        { id: 'factibilidad_ia', label: 'Factibilidad técnica de la IA', hint: 'Si la IA se puede prototipar en las 28 h con herramientas y datos disponibles. 1 = no alcanza · 5 = se puede mostrar funcionando.' }
+    ],
+
     VALIDATION_TYPES: ['Entrevista', 'Encuesta corta', 'Mentor local', 'Mentor internacional', 'Dato / estudio', 'Otro'],
 
     DISCARD_REASONS: [
