@@ -123,26 +123,3 @@ function supabaseUpsert(table, rows) {
 function supabaseDelete(table, id) {
     return supabaseCall('DELETE', `${table}?id=eq.${encodeURIComponent(id)}`);
 }
-
-// Llama a una Edge Function de Supabase con la sesión del usuario.
-async function supabaseFunction(name, body, retried = false) {
-    const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG;
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${await getAccessToken()}`
-        },
-        body: JSON.stringify(body)
-    });
-    if (response.status === 401 && !retried) {
-        await refreshSession();
-        return supabaseFunction(name, body, true);
-    }
-    const text = await response.text();
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch (e) { /* respuesta no JSON */ }
-    if (!response.ok) throw new Error((data && data.error) || `HTTP ${response.status}: ${text.slice(0, 200)}`);
-    return data;
-}

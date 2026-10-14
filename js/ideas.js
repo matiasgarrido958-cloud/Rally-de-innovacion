@@ -39,9 +39,6 @@ const FICHA_FLAT = FICHA_FIELDS.flatMap(f => f.group ? f.fields : [f]);
 let ideaTab = 'banco';
 let ideaSearch = '';
 let draft = null;
-// Evaluación con IA en curso y si su sección queda abierta al repintar el modal.
-let aiEvalLoading = false;
-let aiEvalOpen = false;
 
 function ideas() {
     return byKind('idea');
@@ -49,7 +46,7 @@ function ideas() {
 
 function blankIdeaData() {
     const data = { title: '', name: '', theme: '', beneficiary: '', owner: '', notes: '', status: 'banco',
-        filter: {}, validations: [], scores: {}, ai_scores: {}, ai_eval: null, discard_reason: '', discarded_from: '' };
+        filter: {}, validations: [], scores: {}, discard_reason: '', discarded_from: '' };
     FICHA_FLAT.forEach(f => { data[f.id] = ''; });
     return data;
 }
@@ -59,7 +56,6 @@ function ideaData(item) {
     if (!Array.isArray(data.validations)) data.validations = [];
     if (typeof data.filter !== 'object' || !data.filter) data.filter = {};
     if (typeof data.scores !== 'object' || !data.scores) data.scores = {};
-    if (typeof data.ai_scores !== 'object' || !data.ai_scores) data.ai_scores = {};
     return data;
 }
 
@@ -72,65 +68,11 @@ function nextIdeaId() {
     return `I-${String(max + 1).padStart(2, '0')}`;
 }
 
-// Promedio 1–5 de los criterios puntuados (null si no hay ninguno).
-function averageScore(criteria, scores) {
-    const values = criteria.map(c => Number(scores[c.id])).filter(v => v >= 1 && v <= 5);
+// Promedio 1–5 de los criterios del jurado (null si falta alguno).
+function ideaScore(data) {
+    const values = L.CRITERIA.map(c => Number(data.scores[c.id])).filter(v => v >= 1 && v <= 5);
     if (!values.length) return null;
     return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
-}
-
-function ideaScore(data) {
-    return averageScore(L.CRITERIA, data.scores);
-}
-
-// Matriz de integración de IA: no entra en los requisitos de etapa.
-function ideaAiScore(data) {
-    return averageScore(L.AI_MATRIX, data.ai_scores);
-}
-
-function aiScoredCount(data) {
-    return L.AI_MATRIX.filter(c => Number(data.ai_scores[c.id]) >= 1).length;
-}
-
-// --- Evaluación con IA ---
-
-// Lo que se envía a la IA: los campos con contenido, con su etiqueta como nombre.
-function aiEvalInput(data) {
-    const idea = {
-        'Idea': data.title,
-        'Nombre': data.name,
-        'Tema': data.theme ? findOption(L.THEMES, data.theme).label : '',
-        'Beneficiario directo': data.beneficiary,
-        'Notas / desafío': data.notes
-    };
-    FICHA_FLAT.forEach(f => { idea[f.label] = data[f.id]; });
-    data.validations.filter(v => (v.finding || '').trim()).forEach((v, i) => {
-        idea[`Validación ${i + 1} (${v.type}${v.who ? `, ${v.who}` : ''})`] = v.finding;
-    });
-    Object.keys(idea).forEach(k => { if (!String(idea[k] || '').trim()) delete idea[k]; });
-    return idea;
-}
-
-// Firma corta del contenido evaluado, para avisar si la idea cambió después.
-function aiEvalSignature(data) {
-    const text = JSON.stringify(aiEvalInput(data));
-    let h = 5381;
-    for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
-    return (h >>> 0).toString(36);
-}
-
-function aiEvalScore(data) {
-    const ev = data.ai_eval;
-    if (!ev || !Array.isArray(ev.criterios)) return null;
-    const scores = {};
-    ev.criterios.forEach(r => { scores[r.id] = r.score; });
-    return averageScore(L.CRITERIA, scores);
-}
-
-function aiEvalCitation(ev) {
-    const apa = L.AI_REVIEW.APA[ev.provider] || { author: ev.provider, name: ev.provider, url: '' };
-    const year = new Date(ev.at).getFullYear();
-    return `${apa.author}. (${year}). ${apa.name} (${ev.model}) [Modelo de lenguaje de gran tamaño]. ${apa.url}`.trim();
 }
 
 function filterFailures(data) {
@@ -185,9 +127,6 @@ function ideaCard(item) {
     const stage = findOption(IDEA_ALL, data.status);
     const theme = findOption(L.THEMES, data.theme);
     const score = ideaScore(data);
-    const aiScore = ideaAiScore(data);
-    const evalScore = aiEvalScore(data);
-    const verdict = data.ai_eval ? findOption(L.AI_REVIEW.VERDICTS, data.ai_eval.veredicto) : null;
     let progress = '';
     if (data.status === 'descartada') {
         progress = `<div class="card-progress muted">Motivo: ${escapeHtml(data.discard_reason || 'sin motivo')}</div>`;
@@ -203,11 +142,7 @@ function ideaCard(item) {
             ${data.status === 'descartada' ? `<button class="card-delete" data-action="delete-idea" data-id="${escapeHtml(item.id)}" aria-label="Eliminar definitivamente" title="Eliminar definitivamente"><svg><use href="#i-trash"/></svg></button>` : ''}
             <div class="card-top">
                 <span class="card-id">${escapeHtml(item.id)}</span>
-                <span class="card-scores">
-                    ${evalScore !== null ? `<span class="chip outline score eval" style="--c:${verdict.color}" title="Evaluación con IA (criterios del jurado): ${escapeHtml(verdict.label)}">🤖 ${evalScore}</span>` : ''}
-                    ${aiScore !== null ? `<span class="chip outline score ai" title="Matriz de integración de IA: promedio de ${aiScoredCount(data)} de ${L.AI_MATRIX.length} criterios">IA ${aiScore}</span>` : ''}
-                    ${score !== null ? `<span class="chip outline score" title="Promedio de los criterios del jurado">★ ${score}</span>` : ''}
-                </span>
+                ${score !== null ? `<span class="chip outline score" title="Promedio de los criterios del jurado">★ ${score}</span>` : ''}
             </div>
             <div class="card-title ${data.title ? '' : 'untitled'}">${escapeHtml(data.name || data.title) || 'Sin título'}</div>
             ${data.name && data.title ? `<div class="card-sub">${escapeHtml(data.title)}</div>` : ''}
@@ -359,132 +294,6 @@ function sectionValidation(d, open) {
     `, ideaRequirements(d, 'elegida').length === 0);
 }
 
-function sectionAiMatrix(d, open) {
-    const score = ideaAiScore(d);
-    const scored = aiScoredCount(d);
-    return fold('Matriz de integración de IA', open, `
-        <p class="form-hint">Evalúa cómo la idea integra la IA. Es opcional y no bloquea el avance de etapas.</p>
-        <div class="subgroup">
-            <div class="subgroup-title">Puntaje 1–5 por criterio ${score !== null ? `<span class="score-big ai" title="Promedio de ${scored} de ${L.AI_MATRIX.length} criterios">IA ${score}</span>` : ''}</div>
-            ${L.AI_MATRIX.map(c => `
-                <div class="filter-row">
-                    <span>${escapeHtml(c.label)}${c.hint ? `<span class="form-hint">${escapeHtml(c.hint)}</span>` : ''}</span>
-                    ${pills(`ai_scores.${c.id}`, [1, 2, 3, 4, 5].map(n => ({ id: String(n), label: String(n), color: 'var(--k-s2)' })), String(d.ai_scores[c.id] || ''))}
-                </div>`).join('')}
-        </div>
-    `, scored === L.AI_MATRIX.length);
-}
-
-function aiEvalRow(c, r, teamScore) {
-    return `
-        <div class="ai-row">
-            <div class="ai-row-head">
-                <span class="ai-row-label">${escapeHtml(c.label)}</span>
-                <span class="ai-row-scores">
-                    <span class="ai-score" title="Puntaje de la IA">🤖 ${r.score !== null && r.score !== undefined ? r.score : '—'}</span>
-                    ${teamScore !== undefined ? `<span class="ai-score team" title="Puntaje del equipo">Equipo ${teamScore || '—'}</span>` : ''}
-                </span>
-            </div>
-            ${r.justificacion ? `<p class="form-hint">${escapeHtml(r.justificacion)}</p>` : ''}
-            ${r.mejora ? `<p class="ai-improve"><strong>Mejorar:</strong> ${escapeHtml(r.mejora)}</p>` : ''}
-        </div>`;
-}
-
-function aiEvalResult(d) {
-    const ev = d.ai_eval;
-    if (!ev) return '';
-    const byId = list => Object.fromEntries((list || []).map(r => [r.id, r]));
-    const crit = byId(ev.criterios);
-    const matrix = byId(ev.matriz_ia);
-    const verdict = findOption(L.AI_REVIEW.VERDICTS, ev.veredicto);
-    const score = aiEvalScore(d);
-    const stale = ev.sig !== aiEvalSignature(d);
-    const list = (title, items) => items && items.length
-        ? `<div class="ai-list"><strong>${escapeHtml(title)}</strong><ul>${items.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul></div>` : '';
-    return `
-        <div class="req warn" id="aiStale" ${stale ? '' : 'hidden'}>La idea cambió desde esta evaluación. Vuelve a evaluar para actualizarla.</div>
-        <div class="ai-summary">
-            ${chip(verdict)}
-            ${score !== null ? `<span class="score-big eval" title="Promedio de la IA en los criterios del jurado">🤖 ${score}</span>` : ''}
-        </div>
-        ${ev.resumen ? `<p class="ai-text">${escapeHtml(ev.resumen)}</p>` : ''}
-        <div class="subgroup">
-            <div class="subgroup-title">Criterios del jurado</div>
-            ${L.CRITERIA.map(c => aiEvalRow(c, crit[c.id] || {}, d.scores[c.id] || '')).join('')}
-        </div>
-        ${ev.usa_ia ? `
-        <div class="subgroup">
-            <div class="subgroup-title">Matriz de integración de IA</div>
-            ${L.AI_MATRIX.map(c => aiEvalRow(c, matrix[c.id] || {}, d.ai_scores[c.id] || '')).join('')}
-        </div>` : '<p class="form-hint">La IA indica que la idea no usa inteligencia artificial: la matriz de IA no se puntuó.</p>'}
-        ${list('Fortalezas', ev.fortalezas)}
-        ${list('Qué reforzar primero', ev.mejoras_prioritarias)}
-        <div class="ai-actions">
-            <button type="button" class="btn btn-ghost" data-modal-action="ai-apply">Copiar puntajes de la IA a la ficha</button>
-        </div>
-        <p class="form-hint">Evaluó ${escapeHtml(ev.by || 'Equipo')} · ${escapeHtml(timeAgo(ev.at))} · ${escapeHtml(ev.model)}</p>
-        <p class="form-hint">Cita APA sugerida para (k): <span class="mono">${escapeHtml(aiEvalCitation(ev))}</span></p>`;
-}
-
-function updateAiStale() {
-    const warn = document.getElementById('aiStale');
-    if (warn && draft && draft.ai_eval) warn.hidden = draft.ai_eval.sig === aiEvalSignature(draft);
-}
-
-function sectionAiEval(d, open) {
-    const ev = d.ai_eval;
-    const canRun = !LOCAL_MODE && !aiEvalLoading;
-    return fold('Evaluación con IA', open, `
-        <p class="form-hint">La IA revisa la idea con los criterios del jurado y la matriz de IA, y sugiere qué reforzar.
-            Es una opinión de apoyo: los puntajes los decide el equipo. Mientras más completa la ficha, mejor la evaluación.
-            Las bases piden citar el uso de IA en APA y descalifican su abuso: úsala para revisar, no para redactar la propuesta.</p>
-        ${LOCAL_MODE ? '<div class="req warn">En modo local no hay evaluación con IA: necesita Supabase y la función evaluar-idea.</div>' : ''}
-        <div class="ai-actions">
-            <button type="button" class="btn ${ev ? 'btn-ghost' : 'btn-primary'}" data-modal-action="ai-eval" ${canRun ? '' : 'disabled'}>
-                ${aiEvalLoading ? 'Evaluando…' : (ev ? 'Volver a evaluar' : '🤖 Evaluar con IA')}
-            </button>
-        </div>
-        ${aiEvalResult(d)}
-    `, !!ev && ev.sig === aiEvalSignature(d));
-}
-
-async function runAiEval() {
-    if (aiEvalLoading || !draft) return;
-    if (!String(draft.title || '').trim()) {
-        showToast('Escribe la idea antes de evaluarla', 'warning');
-        return;
-    }
-    const id = currentEditingId;
-    aiEvalLoading = true;
-    aiEvalOpen = true;
-    renderModalBody();
-    try {
-        const result = await supabaseFunction(L.AI_REVIEW.FUNCTION, {
-            idea: aiEvalInput(draft),
-            criteria: L.CRITERIA,
-            ai_matrix: L.AI_MATRIX
-        });
-        if (!draft || currentEditingId !== id) return;
-        draft.ai_eval = { ...result, at: new Date().toISOString(), by: editorName(), sig: aiEvalSignature(draft) };
-        await persistIdea('✓ Evaluación con IA guardada');
-    } catch (error) {
-        console.error('Evaluación con IA:', error);
-        showToast(`⚠️ ${error.message}`, 'warning', 8000);
-    } finally {
-        aiEvalLoading = false;
-        if (draft && currentEditingId === id) renderModalBody();
-    }
-}
-
-function applyAiScores() {
-    const ev = draft.ai_eval;
-    (ev.criterios || []).forEach(r => { if (r.score) draft.scores[r.id] = String(r.score); });
-    (ev.matriz_ia || []).forEach(r => { if (r.score) draft.ai_scores[r.id] = String(r.score); });
-    hasUnsavedChanges = true;
-    renderModalBody();
-    showToast('Puntajes copiados. Revísalos y guarda la idea.');
-}
-
 function renderModalBody() {
     const d = draft;
     const stage = Math.max(0, ideaStageIndex(d.status));
@@ -493,10 +302,6 @@ function renderModalBody() {
     const sections = [sectionIdea, sectionFilter, sectionFicha, sectionValidation];
     const openIndex = Math.min(reached, sections.length - 1);
     const body = document.getElementById('modalBody');
-    const scroll = body.scrollTop;
-    // La evaluación con IA es siempre la última sección: conserva si estaba abierta.
-    const evalFold = body.querySelector('details.fold:last-of-type');
-    if (evalFold && evalFold.querySelector('[data-modal-action="ai-eval"]')) aiEvalOpen = aiEvalOpen || evalFold.open;
     body.innerHTML = `
         ${discarded ? `<div class="req warn"><strong>Descartada</strong> desde ${escapeHtml(findOption(IDEA_STAGES, d.discarded_from).label)}: ${escapeHtml(d.discard_reason || 'sin motivo')}</div>` : ''}
         <div class="discard-panel" id="discardPanel" hidden>
@@ -512,10 +317,7 @@ function renderModalBody() {
             </div>
         </div>
         <div class="req-box" id="reqBox"></div>
-        ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}
-        ${reached >= 2 ? sectionAiMatrix(d, false) : ''}
-        ${sectionAiEval(d, aiEvalOpen)}`;
-    body.scrollTop = scroll;
+        ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}`;
     updateRequirementsBox();
 }
 
@@ -569,8 +371,6 @@ function openIdea(id) {
     const item = getItem(id);
     currentEditingId = id;
     draft = JSON.parse(JSON.stringify(item ? ideaData(item) : blankIdeaData()));
-    aiEvalOpen = false;
-    document.getElementById('modalBody').innerHTML = '';
     hasUnsavedChanges = !item;
     renderModalHeader();
     renderModalBody();
@@ -659,8 +459,6 @@ function handleModalAction(action, el) {
             ideaTab = draft.status;
             return persistIdea(`✓ ${currentEditingId} restaurada`).then(() => closeIdea(true));
         case 'delete': return deleteIdea(currentEditingId);
-        case 'ai-eval': return runAiEval();
-        case 'ai-apply': return applyAiScores();
     }
 }
 
@@ -680,7 +478,6 @@ function setupIdeaModal() {
         hasUnsavedChanges = true;
         if (el.dataset.draft === 'title' || el.dataset.draft === 'name') renderModalHeader();
         updateRequirementsBox();
-        updateAiStale();
     };
     body.addEventListener('input', onEdit);
     body.addEventListener('change', onEdit);
