@@ -2,6 +2,9 @@
 // Gemini solo responde preguntas cerradas sobre lo que dice la idea; el veredicto
 // (pasa / dudosa / no pasa) lo calcula la página con una regla fija.
 // Las preguntas vienen de AI_TRIAGE en js/lineamientos.js.
+// Con mode: 'correlacionar' recibe varias ideas y devuelve grupos de ideas
+// relacionadas con una propuesta combinada para cada uno (la página la muestra y
+// el equipo decide si crea el bloque nuevo; las ideas originales no se tocan).
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  clave de Google AI Studio (https://aistudio.google.com/apikey)
@@ -20,6 +23,10 @@ const MAX_MODELS_PER_REQUEST = 8;
 // modelos nuevos después de TOTAL_BUDGET_MS.
 const MODEL_TIMEOUT_MS = 15000;
 const TOTAL_BUDGET_MS = 35000;
+// Las correlaciones escriben más texto: cada modelo tiene más tiempo y se deja de
+// probar modelos nuevos antes, para quedar bajo el límite de Supabase.
+const CORRELATE_MODEL_TIMEOUT_MS = 45000;
+const CORRELATE_BUDGET_MS = 30000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 let discovered: { at: number; models: string[] } | null = null;
 
@@ -84,7 +91,7 @@ async function modelList(key: string) {
 
 type Attempt = { ok: true; raw: Record<string, Record<string, unknown>> } | { ok: false; status: number; detail: string; next: boolean };
 
-async function askModel(model: string, key: string, prompt: string, schema: unknown): Promise<Attempt> {
+async function askModel(model: string, key: string, prompt: string, schema: unknown, temperature = 0, timeoutMs = MODEL_TIMEOUT_MS): Promise<Attempt> {
     let response: Response;
     let text: string;
     try {
@@ -93,9 +100,9 @@ async function askModel(model: string, key: string, prompt: string, schema: unkn
             headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
             body: JSON.stringify({
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
+                generationConfig: { temperature, responseMimeType: 'application/json', responseSchema: schema }
             }),
-            signal: AbortSignal.timeout(MODEL_TIMEOUT_MS)
+            signal: AbortSignal.timeout(timeoutMs)
         });
         text = await response.text();
     } catch {
@@ -225,40 +232,17 @@ async function handle(req: Request) {
     } catch {
         return json({ error: 'Cuerpo inválido' }, 400);
     }
+    if (body.mode === 'correlacionar') return correlate(key, body);
+
     const questions = cleanQuestions(body.questions);
     const idea: Record<string, string> = {};
     Object.entries((body.idea || {}) as Record<string, unknown>).slice(0, 20)
         .forEach(([k, v]) => { idea[clip(k, 60)] = clip(v, 2000); });
     if (!questions.length || !Object.values(idea).some(v => v.trim())) return json({ error: 'Faltan la idea o las preguntas.' }, 400);
 
-    const prompt = buildPrompt(idea, questions);
-    const schema = responseSchema(questions);
-    const failures: { model: string; status: number; detail: string }[] = [];
-    let raw: Record<string, Record<string, unknown>> | null = null;
-    let model = '';
-    const started = Date.now();
-    for (const candidate of await modelList(key)) {
-        if (Date.now() - started > TOTAL_BUDGET_MS) break;
-        const attempt = await askModel(candidate, key, prompt, schema);
-        if (attempt.ok) {
-            raw = attempt.raw;
-            model = candidate;
-            break;
-        }
-        failures.push({ model: candidate, status: attempt.status, detail: attempt.detail });
-        if (!attempt.next) return json({ error: `Gemini respondió ${attempt.status} (${candidate}): ${attempt.detail}` }, 502);
-    }
-    if (!raw) {
-        if (!failures.length) return json({ error: 'Gemini respondió 503: no hubo tiempo de probar modelos. Vuelve a intentar.' }, 503);
-        const summary = failures.map(f => `${f.model}: ${f.status}`).join(', ');
-        if (failures.every(f => f.status === 429)) {
-            return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto y vuelve a intentar.` }, 429);
-        }
-        if (failures.some(f => [429, 503, 504].includes(f.status))) {
-            return json({ error: `Gemini respondió 503: todos los modelos están saturados o sin cuota (${summary}).` }, 503);
-        }
-        return json({ error: `Ningún modelo respondió (${summary}). Último error: ${failures[failures.length - 1].detail}` }, 502);
-    }
+    const result = await runModels(key, buildPrompt(idea, questions), responseSchema(questions));
+    if (result instanceof Response) return result;
+    const { raw, model } = result;
 
     // Solo valores permitidos; uno inválido queda como sin_datos (o vacío si no existe).
     const answers: Record<string, { valor: string; motivo: string }> = {};
@@ -268,4 +252,98 @@ async function handle(req: Request) {
         answers[q.id] = { valor, motivo: clip(r.motivo, 300) };
     });
     return json({ answers, falta: clip(raw.falta, 300), resumen: clip(raw.resumen, 300), model });
+}
+
+// Prueba los modelos en orden hasta que uno responda; si ninguno, devuelve la
+// respuesta de error para la página.
+async function runModels(key: string, prompt: string, schema: unknown,
+    { temperature = 0, modelTimeout = MODEL_TIMEOUT_MS, budget = TOTAL_BUDGET_MS } = {}):
+    Promise<{ raw: Record<string, Record<string, unknown>>; model: string } | Response> {
+    const failures: { model: string; status: number; detail: string }[] = [];
+    const started = Date.now();
+    for (const candidate of await modelList(key)) {
+        if (Date.now() - started > budget) break;
+        const attempt = await askModel(candidate, key, prompt, schema, temperature, modelTimeout);
+        if (attempt.ok) return { raw: attempt.raw, model: candidate };
+        failures.push({ model: candidate, status: attempt.status, detail: attempt.detail });
+        if (!attempt.next) return json({ error: `Gemini respondió ${attempt.status} (${candidate}): ${attempt.detail}` }, 502);
+    }
+    if (!failures.length) return json({ error: 'Gemini respondió 503: no hubo tiempo de probar modelos. Vuelve a intentar.' }, 503);
+    const summary = failures.map(f => `${f.model}: ${f.status}`).join(', ');
+    if (failures.every(f => f.status === 429)) {
+        return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto y vuelve a intentar.` }, 429);
+    }
+    if (failures.some(f => [429, 503, 504].includes(f.status))) {
+        return json({ error: `Gemini respondió 503: todos los modelos están saturados o sin cuota (${summary}).` }, 503);
+    }
+    return json({ error: `Ningún modelo respondió (${summary}). Último error: ${failures[failures.length - 1].detail}` }, 502);
+}
+
+// --- Correlaciones entre ideas ---
+
+const RELATION_TYPES = ['duplicada', 'complementaria', 'mismo_problema', 'mismo_beneficiario', 'otra'];
+const PROPOSAL_KEYS = ['titulo', 'nombre', 'beneficiario', 'problema', 'descripcion', 'por_que'];
+
+function correlationPrompt(list: { id: string; campos: Record<string, string> }[], stage: string, selection: boolean) {
+    const ideas = list.map(i => `### ${i.id}\n${Object.entries(i.campos).filter(([, v]) => v.trim()).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`).join('\n\n');
+    const task = selection
+        ? `El equipo eligió estas ${list.length} ideas para combinarlas. Devuelve UN solo grupo con todas sus ids y una propuesta que las combine. Si de verdad no tienen ninguna relación útil, devuelve "grupos" vacío y explica por qué en "comentario".`
+        : `Busca grupos de 2 o más ideas que tengan una relación real: son la misma idea con otras palabras (duplicada), se complementan y juntas resuelven mejor el problema (complementaria), atacan el mismo problema (mismo_problema) o el mismo beneficiario (mismo_beneficiario). Una idea puede estar en un solo grupo. No fuerces relaciones: si no hay, devuelve "grupos" vacío. Máximo 6 grupos, del más claro al menos claro.`;
+    return `Ayudas a un equipo universitario de ingeniería en el Rally Latinoamericano de Innovación (competencia de 28 horas en Chile). Tienen ideas de solución en la etapa «${stage}».
+
+${task}
+
+Para cada grupo:
+- "ids": las ids de las ideas del grupo, tal como aparecen.
+- "tipo": duplicada, complementaria, mismo_problema, mismo_beneficiario u otra.
+- "relacion": en una frase, qué las une.
+- "propuesta": una idea combinada que tome lo mejor de cada una, sin inventar datos que no estén en las ideas: "titulo" (la solución en una frase), "nombre" (corto, opcional), "beneficiario" (concreto), "problema" (el problema que ataca), "descripcion" (qué es y cómo funciona, máximo 60 palabras) y "por_que" (por qué combinada es más fuerte que por separado, una frase).
+Además, "comentario": una frase general sobre lo que encontraste.
+
+Ideas:
+
+${ideas}`;
+}
+
+function correlationSchema() {
+    const text = { type: 'STRING' };
+    const proposal = { type: 'OBJECT', properties: Object.fromEntries(PROPOSAL_KEYS.map(k => [k, text])), required: ['titulo', 'beneficiario', 'problema', 'descripcion', 'por_que'] };
+    const group = {
+        type: 'OBJECT',
+        properties: { ids: { type: 'ARRAY', items: text }, tipo: { type: 'STRING', enum: RELATION_TYPES }, relacion: text, propuesta: proposal },
+        required: ['ids', 'tipo', 'relacion', 'propuesta']
+    };
+    return { type: 'OBJECT', properties: { grupos: { type: 'ARRAY', items: group }, comentario: text }, required: ['grupos', 'comentario'] };
+}
+
+async function correlate(key: string, body: Record<string, unknown>) {
+    const list = (Array.isArray(body.ideas) ? body.ideas : []).slice(0, 40)
+        .filter((i: Record<string, unknown>) => i && typeof i.id === 'string')
+        .map((i: Record<string, unknown>) => {
+            const campos: Record<string, string> = {};
+            Object.entries((i.campos || {}) as Record<string, unknown>).slice(0, 16)
+                .forEach(([k, v]) => { campos[clip(k, 60)] = clip(v, 600); });
+            return { id: clip(i.id, 20), campos };
+        });
+    if (list.length < 2) return json({ error: 'Se necesitan al menos 2 ideas para buscar correlaciones.' }, 400);
+    const selection = body.seleccion === true;
+    const result = await runModels(key, correlationPrompt(list, clip(body.etapa, 40), selection), correlationSchema(),
+        { temperature: 0.3, modelTimeout: CORRELATE_MODEL_TIMEOUT_MS, budget: CORRELATE_BUDGET_MS });
+    if (result instanceof Response) return result;
+    const { raw, model } = result;
+
+    // Solo ids enviadas, sin repetir una idea en dos grupos, y grupos de 2 o más.
+    const known = new Set(list.map(i => i.id));
+    const used = new Set<string>();
+    const grupos: { ids: string[]; tipo: string; relacion: string; propuesta: Record<string, string> }[] = [];
+    for (const g of (Array.isArray(raw.grupos) ? raw.grupos : []) as Record<string, unknown>[]) {
+        const ids = [...new Set((Array.isArray(g.ids) ? g.ids : []).map(String))].filter(id => known.has(id) && !used.has(id));
+        const p = (g.propuesta || {}) as Record<string, unknown>;
+        const propuesta = Object.fromEntries(PROPOSAL_KEYS.map(k => [k, clip(p[k], 800)]));
+        if (ids.length < 2 || !propuesta.titulo.trim()) continue;
+        ids.forEach(id => used.add(id));
+        grupos.push({ ids, tipo: RELATION_TYPES.includes(String(g.tipo)) ? String(g.tipo) : 'otra', relacion: clip(g.relacion, 300), propuesta });
+        if (grupos.length >= 6) break;
+    }
+    return json({ grupos, comentario: clip(raw.comentario, 400), model });
 }

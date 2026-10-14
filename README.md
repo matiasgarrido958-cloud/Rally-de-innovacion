@@ -131,6 +131,28 @@ La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 En el nivel gratuito Google limita las consultas por minuto (la página espera 6 s entre ideas,
 `DELAY_MS`) y puede usar lo enviado para mejorar sus modelos. En modo local el botón queda deshabilitado.
 
+## Correlaciones entre ideas
+
+En **Filtro rápido**, **Benchmark** y **Ficha de idea** hay dos botones que usan la misma Edge Function
+(`mode: 'correlacionar'`, una sola consulta a Gemini por búsqueda):
+
+- **🔗 Buscar correlaciones**: manda todas las ideas de la etapa abierta. Gemini devuelve grupos de
+  ideas duplicadas, complementarias, del mismo problema o del mismo beneficiario, y para cada grupo
+  una idea combinada (título, beneficiario, problema, descripción y por qué juntas son más fuertes).
+- **🔗 Correlacionar N** (en *☑ Seleccionar*): solo las ideas marcadas, a voluntad.
+
+Las propuestas aparecen en un panel; **nada se crea solo**. *Crear bloque combinado* agrega una idea
+nueva en la misma etapa con lo de las originales: el problema (si es el mismo), los campos de la
+ficha (si discrepan, cada versión con su id para editarla), las respuestas del filtro y del semáforo
+en que todas coinciden, todos los referentes del benchmark y las validaciones. La decisión del
+benchmark y la evaluación con Gemini quedan pendientes para el bloque nuevo. Las ideas originales no
+se modifican; el bloque muestra 🔗 con sus ids. El panel vive en el navegador de quien buscó hasta
+recargar.
+
+**Al actualizar desde una versión anterior hay que volver a desplegar la función**: pegar de nuevo
+`supabase/functions/filtrar-idea/index.ts` en la función de Supabase (la de dirección `rapid-action`)
+y desplegar. El filtro sigue funcionando igual.
+
 ## Benchmark con IA investigadora
 
 El benchmark no usa la API: cada integrante usa el modo investigador de su IA (Claude, ChatGPT, Gemini,
@@ -150,6 +172,7 @@ js/lineamientos.js    Contenido base: temas, tareas, checklists, pitch, requisit
 js/supabase.js        Cliente mínimo de la API REST de Supabase (el mismo de Fast Check)
 js/app.js             Datos, sincronización, edición en línea y utilidades
 js/desafios.js        Desafíos y problemas (punto 1 de IA)
+js/correlaciones.js   Correlaciones entre ideas y bloques combinados
 js/ideas.js           Flujo de ideas y su ventana de edición
 js/vistas.js          Inicio, Preparación, Equipo, Temas, Tareas, Pitch, Entrega y Bitácora
 js/main.js            Inicio de sesión y arranque

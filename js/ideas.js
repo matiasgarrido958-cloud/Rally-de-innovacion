@@ -447,6 +447,7 @@ function selectionBar(visibleIds) {
             <div class="ai-actions">
                 <button class="btn btn-ghost" data-action="select-all" data-ids="${escapeHtml(visibleIds.join(','))}" ${visibleIds.length ? '' : 'disabled'}>${allVisible ? 'Quitar las de esta etapa' : `Marcar las ${visibleIds.length} de esta etapa`}</button>
                 <button class="btn btn-ghost" data-action="select-none" ${n ? '' : 'disabled'}>Ninguna</button>
+                ${correlationButtons(true)}
                 <button class="btn btn-ghost danger" data-action="delete-selected" ${n ? '' : 'disabled'}>🗑 Borrar ${n}</button>
             </div>
         </div>`;
@@ -643,6 +644,7 @@ function ideaCard(item) {
             <div class="card-tags">
                 ${data.theme ? chip(theme) : ''}
                 ${data.problem_id ? `<span class="chip outline" title="${escapeHtml(ideaContext(data).problema)}">🎯 ${escapeHtml(data.problem_id)}</span>` : ''}
+                ${combinedChip(data)}
                 ${offering ? `<span class="chip" style="--c:${offering.color}" title="${escapeHtml(offering.hint)}">${offering.icon} ${escapeHtml(offering.label)}</span>` : ''}
                 ${f.level ? `<span class="chip" style="--c:${FEASIBILITY_LEVELS[f.level].color}" title="Semáforo de factibilidad en ${L.WORK_HOURS} h">● ${FEASIBILITY_LEVELS[f.level].label} ${f.points}/${f.max}</span>` : ''}
                 ${data.status === 'filtro' || data.status === 'benchmark' ? triageChip(data) : ''}
@@ -702,6 +704,8 @@ function renderIdeasView() {
             </button>
         </div>
         ${ideaSelection ? selectionBar(filtered.map(x => x.item.id)) : triageBar(all)}
+        ${correlationBar()}
+        ${correlationPanel()}
         <div class="grid">
             ${filtered.length ? filtered.map(x => ideaCard(x.item)).join('') : `
                 <div class="empty">
@@ -742,6 +746,7 @@ function sectionIdea(d, open) {
     const p = problemById(d.problem_id);
     const v = p && p.data.check ? findOption(PCHECK.VERDICTS, p.data.check.verdict) : null;
     return fold('1 · Problema e idea de solución', open, `
+        ${combinedNotice(d)}
         <div class="form-group"><label class="form-label">Problema que ataca <span class="req-star">*</span>
             <span class="form-hint inline">De la vista Desafíos${v ? ` · revisión: ${escapeHtml(v.label)}` : ''}</span></label>
             <select class="form-select" data-draft="problem_id">
@@ -1439,6 +1444,15 @@ registerView({
             render();
         },
         'delete-selected': () => deleteSelected(),
+        'correlate-all': () => findCorrelations(false),
+        'correlate-selected': () => findCorrelations(true),
+        'corr-create': (el) => createCombined(Number(el.dataset.index)),
+        'corr-dismiss': (el) => dismissCorrelation(Number(el.dataset.index)),
+        'corr-close': () => { correlation = null; render(); },
+        'open-idea': (el, e) => {
+            if (e) e.stopPropagation();
+            if (getItem(el.dataset.id)) openIdea(el.dataset.id);
+        },
         'ai-triage': () => runTriage(),
         'ai-discard': () => discardRejected(),
         'send-to-filter': () => sendToFilter(),
