@@ -5,10 +5,50 @@
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  clave de Google AI Studio (https://aistudio.google.com/apikey)
-//   GEMINI_MODEL    opcional; por defecto gemini-3.8-flash
+//   GEMINI_MODELS   opcional; modelos en orden, separados por comas, p. ej.
+//                   gemini-3.8-flash,gemini-3.8-flash-lite. Si uno está saturado, sin
+//                   cuota o no existe para la clave, se usa el siguiente (la cuota
+//                   gratuita es por modelo). GEMINI_MODEL (uno solo) también sirve.
+//                   Por defecto: gemini-3.8-flash.
 // Deja activado "Verify JWT": solo usuarios con sesión en el workspace pueden usarla.
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
+
+// Tolera valores pegados con espacios, comillas o el prefijo "models/".
+function modelList() {
+    const raw = Deno.env.get('GEMINI_MODELS') || Deno.env.get('GEMINI_MODEL') || '';
+    const list = raw.split(/[,\n]/)
+        .map(m => m.trim().replace(/^["']|["']$/g, '').replace(/^models\//, '').trim())
+        .filter(Boolean);
+    return list.length ? [...new Set(list)] : [DEFAULT_MODEL];
+}
+
+type Attempt = { ok: true; raw: Record<string, Record<string, unknown>> } | { ok: false; status: number; detail: string; next: boolean };
+
+async function askModel(model: string, key: string, prompt: string, schema: unknown): Promise<Attempt> {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
+        })
+    });
+    const text = await response.text();
+    if (!response.ok) {
+        // Saturado, sin cuota, caído o modelo inexistente para esta clave: probar el siguiente.
+        const modelProblem = [404, 429, 500, 503, 504].includes(response.status)
+            || (response.status === 400 && /model/i.test(text));
+        return { ok: false, status: response.status, detail: text.slice(0, 300), next: modelProblem };
+    }
+    try {
+        const data = JSON.parse(text);
+        const out = (data.candidates?.[0]?.content?.parts || []).map((p: { text?: string }) => p.text || '').join('');
+        return { ok: true, raw: JSON.parse(out) };
+    } catch {
+        return { ok: false, status: 502, detail: 'respuesta no válida', next: true };
+    }
+}
 
 const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -110,8 +150,6 @@ async function handle(req: Request) {
 
     const key = Deno.env.get('GEMINI_API_KEY');
     if (!key) return json({ error: 'Falta el secret GEMINI_API_KEY en Supabase.' }, 500);
-    // Tolera valores pegados con espacios, comillas o el prefijo "models/".
-    const model = (Deno.env.get('GEMINI_MODEL') || '').trim().replace(/^["']|["']$/g, '').replace(/^models\//, '').trim() || DEFAULT_MODEL;
 
     let body: Record<string, unknown>;
     try {
@@ -125,25 +163,30 @@ async function handle(req: Request) {
         .forEach(([k, v]) => { idea[clip(k, 60)] = clip(v, 2000); });
     if (!questions.length || !Object.values(idea).some(v => v.trim())) return json({ error: 'Faltan la idea o las preguntas.' }, 400);
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: buildPrompt(idea, questions) }] }],
-            generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: responseSchema(questions) }
-        })
-    });
-    const text = await response.text();
-    if (response.status === 429) return json({ error: 'Se alcanzó el límite gratuito de Gemini. Espera un minuto y vuelve a intentar.' }, 429);
-    if (!response.ok) return json({ error: `Gemini respondió ${response.status}: ${text.slice(0, 300)}` }, 502);
-
-    let raw: Record<string, Record<string, unknown>>;
-    try {
-        const data = JSON.parse(text);
-        const out = (data.candidates?.[0]?.content?.parts || []).map((p: { text?: string }) => p.text || '').join('');
-        raw = JSON.parse(out);
-    } catch {
-        return json({ error: 'Gemini no devolvió una respuesta válida. Intenta de nuevo.' }, 502);
+    const prompt = buildPrompt(idea, questions);
+    const schema = responseSchema(questions);
+    const failures: { model: string; status: number; detail: string }[] = [];
+    let raw: Record<string, Record<string, unknown>> | null = null;
+    let model = '';
+    for (const candidate of modelList()) {
+        const attempt = await askModel(candidate, key, prompt, schema);
+        if (attempt.ok) {
+            raw = attempt.raw;
+            model = candidate;
+            break;
+        }
+        failures.push({ model: candidate, status: attempt.status, detail: attempt.detail });
+        if (!attempt.next) return json({ error: `Gemini respondió ${attempt.status} (${candidate}): ${attempt.detail}` }, 502);
+    }
+    if (!raw) {
+        const summary = failures.map(f => `${f.model}: ${f.status}`).join(', ');
+        if (failures.every(f => f.status === 429)) {
+            return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto o agrega otro modelo a GEMINI_MODELS.` }, 429);
+        }
+        if (failures.some(f => [429, 503, 504].includes(f.status))) {
+            return json({ error: `Gemini respondió 503: todos los modelos están saturados o sin cuota (${summary}).` }, 503);
+        }
+        return json({ error: `Ningún modelo respondió (${summary}). Último error: ${failures[failures.length - 1].detail}` }, 502);
     }
 
     // Solo valores permitidos; uno inválido queda como sin_datos (o vacío si no existe).

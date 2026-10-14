@@ -79,8 +79,11 @@ La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 1. Saca una API key gratuita en [Google AI Studio](https://aistudio.google.com/apikey).
 2. En Supabase: **Edge Functions → Deploy a new function → Via Editor**, nombre `filtrar-idea`, pega
    el contenido de `supabase/functions/filtrar-idea/index.ts` y despliega (deja *Verify JWT* activado).
-3. **Edge Functions → Secrets**: agrega `GEMINI_API_KEY` con tu clave. Opcional: `GEMINI_MODEL`
-   (por defecto `gemini-3.8-flash`).
+3. **Edge Functions → Secrets**: agrega `GEMINI_API_KEY` con tu clave. Opcional: `GEMINI_MODELS`, los
+   modelos en orden separados por comas (p. ej. `gemini-3.8-flash,gemini-3.8-flash-lite`, copiando los
+   identificadores desde Google AI Studio). Si uno está saturado, sin cuota o no existe para la clave,
+   la función usa el siguiente; la cuota gratuita es por modelo, así que la lista la multiplica. Sin
+   lista se usa `gemini-3.8-flash`. Si todos fallan, la página reintenta tras 5, 15 y 30 s.
 
 En el nivel gratuito Google limita las consultas por minuto (la página espera 6 s entre ideas,
 `DELAY_MS`) y puede usar lo enviado para mejorar sus modelos. En modo local el botón queda deshabilitado.
