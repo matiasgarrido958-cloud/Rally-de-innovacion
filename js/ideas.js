@@ -50,7 +50,7 @@ function ideas() {
 
 function blankIdeaData() {
     const data = { title: '', name: '', theme: '', beneficiary: '', owner: '', notes: '', status: 'banco',
-        filter: {}, feasibility: {}, offering: '', benchmark: { refs: [], trend: '', differentiation: '', notes: '', verdict: '' },
+        filter: {}, feasibility: {}, offering: '', benchmark: { refs: [], research: [], consolidated: '', trend: '', differentiation: '', notes: '', verdict: '' },
         plan_done: {}, validations: [], scores: {}, discard_reason: '', discarded_from: '' };
     FICHA_FLAT.forEach(f => { data[f.id] = ''; });
     return data;
@@ -65,6 +65,8 @@ function ideaData(item) {
     if (typeof data.plan_done !== 'object' || !data.plan_done) data.plan_done = {};
     data.benchmark = { ...blankIdeaData().benchmark, ...(data.benchmark || {}) };
     if (!Array.isArray(data.benchmark.refs)) data.benchmark.refs = [];
+    if (!Array.isArray(data.benchmark.research)) data.benchmark.research = [];
+    if (typeof data.ai_filter !== 'object') data.ai_filter = null;
     return data;
 }
 
@@ -115,6 +117,142 @@ function workPlan(offering) {
 
 function benchmarkRefsDone(data) {
     return data.benchmark.refs.filter(r => String(r.name || '').trim() && String(r.difference || '').trim()).length;
+}
+
+// --- Primer filtro con IA (Gemini, Edge Function) ---
+// Gemini responde preguntas cerradas; el veredicto sale de una regla fija:
+// un "no" en una pregunta clave = No pasa; un "sin datos" o un "no" en otra = Dudosa.
+
+const TRIAGE = L.AI_TRIAGE;
+const TRIAGE_STAGES = ['banco', 'filtro'];
+const TRIAGE_VALUES = {
+    si: { label: 'Sí', color: 'var(--k-good)' }, no: { label: 'No', color: 'var(--k-bad)' },
+    medio: { label: 'A medias', color: 'var(--k-s4)' }, sin_datos: { label: 'Sin datos', color: 'var(--k-neutral)' },
+    producto: { label: 'Producto', color: 'var(--k-t3)' }, servicio: { label: 'Servicio', color: 'var(--k-t1)' },
+    mixto: { label: 'Producto + servicio', color: 'var(--k-t2)' }
+};
+let triageRun = null; // { done, total } mientras se evalúa en lote
+
+// Lo que recibe la IA: solo lo que el equipo escribió en la idea.
+function triageInput(data) {
+    return {
+        idea: data.title || '', nombre: data.name || '',
+        tema: data.theme ? findOption(L.THEMES, data.theme).label : '',
+        beneficiario: data.beneficiary || '', notas: data.notes || ''
+    };
+}
+
+function triageHash(data) {
+    let h = 0;
+    for (const c of JSON.stringify(triageInput(data))) h = (h * 31 + c.charCodeAt(0)) | 0;
+    return String(h);
+}
+
+function triageVerdict(answers) {
+    const value = q => (answers[q.id] || {}).valor;
+    if (TRIAGE.QUESTIONS.some(q => q.key && value(q) === 'no')) return 'no_pasa';
+    if (TRIAGE.QUESTIONS.some(q => ['sin_datos', 'no'].includes(value(q)))) return 'dudosa';
+    return 'pasa';
+}
+
+function triageStale(data) {
+    return Boolean(data.ai_filter && data.ai_filter.hash !== triageHash(data));
+}
+
+function needsTriage(data) {
+    return TRIAGE_STAGES.includes(data.status) && String(data.title || '').trim() && (!data.ai_filter || triageStale(data));
+}
+
+function triageRank(data) {
+    const f = data.ai_filter;
+    return f ? TRIAGE.VERDICTS.findIndex(v => v.id === f.verdict) : TRIAGE.VERDICTS.length;
+}
+
+function triageChip(data) {
+    const f = data.ai_filter;
+    if (!f) return '';
+    const v = findOption(TRIAGE.VERDICTS, f.verdict);
+    const stale = triageStale(data);
+    return `<span class="chip" style="--c:${v.color}" title="${stale ? 'La idea cambió desde la evaluación: vuelve a evaluarla' : 'Primer filtro con IA (sugerencia)'}">🤖 ${escapeHtml(v.label)}${stale ? ' ⟳' : ''}</span>`;
+}
+
+async function evaluateIdea(item) {
+    const data = ideaData(item);
+    const result = await supabaseFunction(TRIAGE.FUNCTION, {
+        idea: triageInput(data),
+        questions: TRIAGE.QUESTIONS.map(({ id, label, help, options }) => ({ id, label, help, options }))
+    });
+    const aiFilter = {
+        answers: result.answers || {}, falta: result.falta || '', resumen: result.resumen || '', model: result.model || '',
+        verdict: triageVerdict(result.answers || {}), hash: triageHash(data), at: new Date().toISOString()
+    };
+    // Se guarda sobre la versión más reciente, por si alguien la editó mientras tanto.
+    const fresh = getItem(item.id) || item;
+    await saveItem({ ...fresh, data: { ...fresh.data, ai_filter: aiFilter } }, { rerender: false });
+    return aiFilter;
+}
+
+async function runTriage() {
+    if (triageRun) return;
+    if (LOCAL_MODE) return showToast('El filtro con IA necesita Supabase: no funciona en modo local', 'warning');
+    const pending = ideas().filter(i => needsTriage(ideaData(i)));
+    if (!pending.length) return showToast('No hay ideas nuevas ni cambiadas por evaluar', 'warning');
+    triageRun = { done: 0, total: pending.length };
+    render();
+    let error = null;
+    for (const [n, item] of pending.entries()) {
+        // Pausa entre consultas para no pasar el límite por minuto del nivel gratuito.
+        if (n) await new Promise(r => setTimeout(r, TRIAGE.DELAY_MS));
+        try {
+            await evaluateIdea(item);
+            triageRun.done++;
+        } catch (e) {
+            error = e;
+            break;
+        }
+        requestRender();
+    }
+    const { done, total } = triageRun;
+    triageRun = null;
+    requestRender();
+    if (error) showToast(`❌ ${error.message} (${done} de ${total} evaluadas; esas quedan guardadas)`, 'error', 9000);
+    else showToast(`✓ ${total} idea(s) evaluadas con Gemini`);
+}
+
+// Pasa al Filtro las ideas del banco que la IA marcó "Pasa" y cumplen los requisitos.
+function promotableIdeas() {
+    return ideas().filter(i => {
+        const d = ideaData(i);
+        return d.status === 'banco' && d.ai_filter && d.ai_filter.verdict === 'pasa' && !triageStale(d) && !ideaRequirements(d, 'filtro').length;
+    });
+}
+
+async function promoteIdeas() {
+    const list = promotableIdeas();
+    for (const item of list) await saveItem({ ...item, data: { ...item.data, status: 'filtro' } }, { rerender: false });
+    render();
+    showToast(`✓ ${list.length} idea(s) pasaron al Filtro`);
+}
+
+function triageBar(all) {
+    if (!TRIAGE_STAGES.includes(ideaTab)) return '';
+    const inStages = all.filter(x => TRIAGE_STAGES.includes(x.data.status));
+    const pending = inStages.filter(x => needsTriage(x.data)).length;
+    const counts = TRIAGE.VERDICTS.map(v => chip({ ...v, label: `${v.label}: ${inStages.filter(x => x.data.ai_filter && x.data.ai_filter.verdict === v.id).length}` }));
+    const promotable = ideaTab === 'banco' ? promotableIdeas().length : 0;
+    const label = triageRun ? `Evaluando ${Math.min(triageRun.done + 1, triageRun.total)} de ${triageRun.total}…` : `🤖 Evaluar con Gemini (${pending})`;
+    return `
+        <div class="ai-bar">
+            <div class="ai-bar-text">
+                <strong>Primer filtro con IA</strong>
+                <span class="form-hint">${LOCAL_MODE ? 'Necesita Supabase: en modo local no está disponible.' : 'Gemini lee cada idea del banco y del filtro y responde preguntas cerradas. Es una sugerencia: el equipo decide qué pasa al benchmark.'}</span>
+                <div class="card-tags">${counts.join('')}</div>
+            </div>
+            <div class="ai-actions">
+                ${promotable ? `<button class="btn btn-ghost" data-action="ai-promote">Pasar ${promotable} «Pasa» al Filtro →</button>` : ''}
+                <button class="btn btn-accent" data-action="ai-triage" ${LOCAL_MODE || triageRun || !pending ? 'disabled' : ''}>${label}</button>
+            </div>
+        </div>`;
 }
 
 function ideaRequirements(data, target) {
@@ -206,6 +344,7 @@ function ideaCard(item) {
                 ${data.theme ? chip(theme) : ''}
                 ${offering ? `<span class="chip" style="--c:${offering.color}" title="${escapeHtml(offering.hint)}">${offering.icon} ${escapeHtml(offering.label)}</span>` : ''}
                 ${f.level ? `<span class="chip" style="--c:${FEASIBILITY_LEVELS[f.level].color}" title="Semáforo de factibilidad en ${L.WORK_HOURS} h">● ${FEASIBILITY_LEVELS[f.level].label} ${f.points}/${f.max}</span>` : ''}
+                ${TRIAGE_STAGES.includes(data.status) || data.status === 'benchmark' ? triageChip(data) : ''}
                 ${data.beneficiary ? `<span class="chip outline" title="Beneficiario directo">👥 ${escapeHtml(data.beneficiary)}</span>` : ''}
             </div>
             ${progress}
@@ -221,8 +360,11 @@ function renderIdeasView() {
     const q = ideaSearch;
     const filtered = all.filter(({ item, data }) => data.status === ideaTab &&
         (!q || `${item.id} ${data.title} ${data.name} ${data.beneficiary} ${data.owner} ${findOption(L.THEMES, data.theme).label}`.toLowerCase().includes(q)));
+    if (ideaTab === 'banco') {
+        filtered.sort((a, b) => triageRank(a.data) - triageRank(b.data));
+    }
     if (ideaTab === 'filtro' || ideaTab === 'benchmark') {
-        filtered.sort((a, b) => feasibility(b.data).points - feasibility(a.data).points);
+        filtered.sort((a, b) => (feasibility(b.data).points - feasibility(a.data).points) || (triageRank(a.data) - triageRank(b.data)));
     }
     if (ideaTab === 'validacion' || ideaTab === 'elegida') {
         filtered.sort((a, b) => (ideaScore(b.data) ?? -1) - (ideaScore(a.data) ?? -1));
@@ -257,6 +399,7 @@ function renderIdeasView() {
                 <svg><use href="#i-archive"/></svg>Descartadas (${discardedCount})
             </button>
         </div>
+        ${triageBar(all)}
         <div class="grid">
             ${filtered.length ? filtered.map(x => ideaCard(x.item)).join('') : `
                 <div class="empty">
@@ -339,21 +482,111 @@ function feasibilityBadge(d) {
 
 // --- Benchmark (fase 2) ---
 
-function benchmarkPrompt(d) {
+function benchmarkIdeaLines(d) {
     const offering = d.offering ? findOption(L.OFFERING_TYPES, d.offering).label : 'por definir';
-    const lines = [
+    return [
         ['Idea', d.title], ['Nombre', d.name], ['Tema', d.theme ? findOption(L.THEMES, d.theme).label : ''],
         ['Tipo', offering], ['Beneficiario directo', d.beneficiary], ['Notas / desafío', d.notes]
     ].filter(([, v]) => String(v || '').trim()).map(([k, v]) => `- ${k}: ${v}`).join('\n');
-    return `Estoy en el Rally Latinoamericano de Innovación (competencia universitaria de ingeniería). Necesito un benchmark de esta idea:
-${lines}
+}
 
-1. Lista 5 soluciones existentes en el mundo parecidas (empresas, startups, proyectos públicos o de investigación). Para cada una: nombre, país, enlace, qué hace y en qué se diferencia de nuestra idea. Prioriza Latinoamérica y Chile si existen.
-2. ¿El tema está en crecimiento, estable o en baja? Justifica con datos o fuentes.
-3. ¿Qué nos podría diferenciar de verdad? Sé crítico: si ya existe algo igual, dilo.
-4. Riesgos principales para implementarla en Chile.
-5. Fuentes en formato APA 7.
-No inventes enlaces ni datos: si no estás seguro, indícalo.`;
+const REFS_BLOCK = `REFERENTES
+Nombre | País | Enlace | Qué hace | Diferencia con nuestra idea`;
+
+// Prompt para el modo investigador (Claude, ChatGPT, Gemini o Perplexity).
+function benchmarkPrompt(d) {
+    return `Actúa como analista de vigilancia tecnológica y de mercado. Investiga en profundidad, con búsqueda web y fuentes reales, para hacer el benchmark de una idea de un equipo universitario de ingeniería que compite en el Rally Latinoamericano de Innovación 2026 (28 horas, sede Santiago de Chile).
+
+IDEA
+${benchmarkIdeaLines(d)}
+
+QUÉ NECESITO
+1. Soluciones existentes: entre 5 y 8 soluciones parecidas en el mundo (empresas, startups, proyectos públicos, ONG, investigación o patentes). Primero Chile y Latinoamérica, luego las internacionales más relevantes. Para cada una: nombre, país, enlace oficial, qué hace, estado (activa, piloto o cerrada) y en qué se diferencia de nuestra idea.
+2. Tendencia: ¿el tema está en crecimiento, estable o en baja? Justifica con datos con año y fuente (mercado, inversión, políticas públicas, publicaciones).
+3. Diferenciación: ¿qué podría hacer única a nuestra idea frente a lo que existe (precio, público, tecnología, contexto chileno, modelo de negocio)? Sé crítico: si ya existe algo igual, dilo claramente.
+4. Contexto en Chile: normativa, actores, programas de financiamiento y datos públicos que sirvan para justificar el impacto.
+5. Riesgos principales para implementarla en Chile.
+
+REGLAS
+- No inventes empresas, enlaces, cifras ni citas. Si no encuentras algo, escribe "no encontrado".
+- Cada dato con su fuente. Marca con (verificar) lo que no pudiste confirmar en una fuente primaria.
+- Responde en español.
+
+FORMATO DE SALIDA
+Secciones 1 a 5 con título, luego las fuentes en APA 7. Al final, este bloque exacto, con una fila por solución, separando con | y sin tabla de markdown:
+${REFS_BLOCK}`;
+}
+
+// Prompt para depurar en Claude o ChatGPT Pro lo que respondieron todas las IA.
+function consolidationPrompt(d) {
+    const research = d.benchmark.research.filter(r => String(r.text || '').trim());
+    return `Tengo los resultados de benchmark de ${research.length} herramienta(s) de IA para la misma idea. Depúralos como un analista crítico.
+
+IDEA
+${benchmarkIdeaLines(d)}
+
+TAREAS
+1. Une los referentes repetidos (mismo nombre o misma empresa) y descarta los que no sean comparables con nuestra idea.
+2. Marca con (verificar) los referentes o enlaces que aparecen en un solo resultado, que no traen enlace o que se contradicen entre resultados. No agregues referentes que no estén en los resultados.
+3. Tendencia del tema: elige una (en crecimiento, estable, en baja o sin datos) y justifícala con los datos de los resultados.
+4. Diferenciación: en máximo 3 frases, qué distingue a nuestra idea de lo que existe. Si algún referente ya hace lo mismo, dilo.
+5. Recomendación: seguir, ajustar la idea o descartar, con el motivo en una frase.
+6. Fuentes en APA 7, incluida una cita por cada herramienta de IA usada.
+
+FORMATO DE SALIDA
+Secciones 1 a 6 con título. Al final, este bloque exacto, con una fila por referente ordenada del más parecido al menos parecido, separando con | y sin tabla de markdown:
+${REFS_BLOCK}
+
+RESULTADOS
+${research.map(r => `=== ${r.ai || 'IA'} ===\n${String(r.text).trim()}`).join('\n\n')}`;
+}
+
+// Lee las filas "Nombre | País | Enlace | Qué hace | Diferencia" (también de una tabla markdown).
+function parseRefs(text) {
+    const clean = v => v.replace(/\*\*/g, '').replace(/^\[([^\]]*)\]\([^)]*\)$/, '$1').trim();
+    const refs = [];
+    String(text || '').split('\n').forEach(raw => {
+        const cells = raw.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+        if (cells.length < 5) return;
+        let name = clean(cells[0]);
+        if (!name || /^:?-{2,}/.test(name) || /^nombre$/i.test(name)) return;
+        // Lo que la IA marcó para verificar queda marcado en el nombre.
+        if (/verificar/i.test(raw) && !/verificar/i.test(name)) name += ' (verificar)';
+        const url = (cells[2].match(/https?:\/\/[^\s)\]>]+/) || [''])[0];
+        refs.push({ name, country: clean(cells[1]), url, what: clean(cells[3]), difference: clean(cells.slice(4).join(' | ')) });
+    });
+    return refs;
+}
+
+function importRefs() {
+    const b = draft.benchmark;
+    const source = String(b.consolidated || '').trim() || b.research.map(r => r.text || '').join('\n');
+    const found = parseRefs(source);
+    if (!found.length) {
+        showToast('No encontré el bloque REFERENTES: pega la respuesta completa, con las filas separadas por |', 'warning', 6000);
+        return;
+    }
+    const key = name => String(name || '').replace(/\(verificar\)/i, '').trim().toLowerCase();
+    const known = new Set(b.refs.map(r => key(r.name)).filter(Boolean));
+    const fresh = found.filter(r => !known.has(key(r.name)) && known.add(key(r.name)));
+    // Las filas vacías que agregó el equipo se reemplazan por las importadas.
+    b.refs = b.refs.filter(r => Object.values(r).some(v => String(v || '').trim())).concat(fresh);
+    hasUnsavedChanges = true;
+    renderModalBody();
+    showToast(fresh.length ? `✓ ${fresh.length} referente(s) importados: verifiquen los enlaces` : 'Esos referentes ya estaban registrados', fresh.length ? 'success' : 'warning');
+}
+
+function researchRow(r, index) {
+    return `
+        <div class="vsrc">
+            <div class="vsrc-head">
+                <select class="form-input research-ai" data-draft="benchmark.research.${index}.ai" aria-label="IA">
+                    ${L.BENCHMARK_AIS.map(a => `<option ${a === r.ai ? 'selected' : ''}>${escapeHtml(a)}</option>`).join('')}
+                </select>
+                <button type="button" class="row-remove" data-modal-action="remove-research" data-index="${index}" aria-label="Quitar">×</button>
+            </div>
+            <textarea class="form-textarea small" rows="4" data-draft="benchmark.research.${index}.text" placeholder="Pega aquí la respuesta completa de esta IA">${escapeHtml(r.text || '')}</textarea>
+        </div>`;
 }
 
 function benchmarkRefRow(r, index) {
@@ -376,13 +609,29 @@ function benchmarkRefRow(r, index) {
 function sectionBenchmark(d, open) {
     const b = d.benchmark;
     return fold('3 · Benchmark (fase 2)', open, `
-        <p class="form-hint">Investiguen qué se está haciendo en el mundo: búsqueda propia, Google Scholar, patentes y la IA gratuita que prefieran.
-            Copien el prompt, péguenlo en ChatGPT, Gemini u otra, y <strong>verifiquen cada enlace</strong> antes de registrarlo: las IA inventan referencias.
+        <p class="form-hint">Investiguen qué se está haciendo en el mundo con el modo investigador de cada IA (Claude, ChatGPT, Gemini, Perplexity)
+            y sus propias fuentes. <strong>Verifiquen cada enlace</strong> antes de dejarlo: las IA inventan referencias.
             Lo que usen va con cita APA en (k), incluido el uso de IA.</p>
-        <div class="ai-actions">
-            <button type="button" class="btn btn-ghost" data-modal-action="copy-prompt">📋 Copiar prompt para IA</button>
+        <div class="subgroup">
+            <div class="subgroup-title">Paso 1 · Investigar</div>
+            <p class="form-hint">Copien el prompt y péguenlo en el modo investigador de cada IA.</p>
+            <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="copy-prompt">📋 Copiar prompt de investigación</button></div>
+            <textarea class="form-textarea small prompt-box" id="promptBox" rows="6" readonly hidden></textarea>
         </div>
-        <textarea class="form-textarea small prompt-box" id="promptBox" rows="6" readonly hidden></textarea>
+        <div class="subgroup">
+            <div class="subgroup-title">Paso 2 · Respuestas de las IA</div>
+            <div class="rows">${b.research.map(researchRow).join('')}</div>
+            <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-research"><svg><use href="#i-plus"/></svg>Agregar respuesta de una IA</button>
+        </div>
+        <div class="subgroup">
+            <div class="subgroup-title">Paso 3 · Depurar e importar</div>
+            <p class="form-hint">Copien el prompt de depuración (junta todas las respuestas) y péguenlo en Claude o ChatGPT Pro.
+                Peguen el resultado abajo e importen los referentes. Sin depuración, se importan desde las respuestas del paso 2.</p>
+            <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="copy-consolidation">📋 Copiar prompt para depurar</button></div>
+            <textarea class="form-textarea small prompt-box" id="consolidationBox" rows="6" readonly hidden></textarea>
+            ${field('benchmark.consolidated', 'Resultado depurado', b.consolidated, { textarea: true, rows: 4, placeholder: 'Pega aquí la respuesta de la depuración' })}
+            <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="import-refs">⬇ Importar referentes</button></div>
+        </div>
         <div class="rows">${b.refs.map(benchmarkRefRow).join('')}</div>
         <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-ref"><svg><use href="#i-plus"/></svg>Agregar referente</button>
         <div class="form-group"><label class="form-label">Tendencia del tema</label>${pills('benchmark.trend', L.BENCHMARK_TRENDS, b.trend)}</div>
@@ -390,6 +639,60 @@ function sectionBenchmark(d, open) {
         ${field('benchmark.notes', 'Notas de la investigación', b.notes, { textarea: true, rows: 3, placeholder: 'Hallazgos, cifras, riesgos, fuentes por citar' })}
         <div class="form-group"><label class="form-label">Decisión <span class="req-star">*</span></label>${pills('benchmark.verdict', L.BENCHMARK_VERDICTS, b.verdict)}</div>
     `, ideaRequirements(d, 'ficha').length === 0, 'benchmark');
+}
+
+// --- Primer filtro con IA en la ventana de la idea ---
+
+function sectionTriage(d) {
+    const f = d.ai_filter;
+    const stale = triageStale(d);
+    const v = f ? findOption(TRIAGE.VERDICTS, f.verdict) : null;
+    const body = !f ? `<p class="form-hint">Todavía no se evalúa. ${LOCAL_MODE ? 'Necesita Supabase.' : 'Guarda la idea y usa «Evaluar con Gemini».'}</p>` : `
+        <div class="filter-row"><span><strong>Sugerencia:</strong> ${chip(v)} ${escapeHtml(f.resumen)}</span></div>
+        ${stale ? '<div class="req warn">La idea cambió desde esta evaluación: vuelve a evaluarla.</div>' : ''}
+        ${TRIAGE.QUESTIONS.map(q => {
+            const a = f.answers[q.id] || {};
+            const val = TRIAGE_VALUES[a.valor] || { label: a.valor || '—', color: 'var(--k-neutral)' };
+            return `<div class="filter-row"><span>${escapeHtml(q.label)}<span class="form-hint">${escapeHtml(a.motivo || '')}</span></span>${chip(val)}</div>`;
+        }).join('')}
+        ${f.falta ? `<p class="form-hint"><strong>Falta:</strong> ${escapeHtml(f.falta)}</p>` : ''}
+        <p class="form-hint">${escapeHtml(f.model)} · ${escapeHtml(timeAgo(f.at))}. Es una sugerencia: el semáforo y el filtro los confirma el equipo.</p>`;
+    return fold('🤖 Primer filtro con IA', false, `
+        ${body}
+        <div class="ai-actions">
+            ${f ? '<button type="button" class="btn btn-ghost" data-modal-action="ai-apply">Aplicar sugerencias al filtro</button>' : ''}
+            <button type="button" class="btn btn-ghost" data-modal-action="ai-eval" ${LOCAL_MODE || !String(d.title || '').trim() ? 'disabled' : ''}>${f ? 'Evaluar de nuevo' : 'Evaluar con Gemini'}</button>
+        </div>
+    `, Boolean(f) && !stale, 'ia');
+}
+
+// Llena los campos del filtro que siguen vacíos con lo que sugirió la IA.
+function applyTriage() {
+    const f = draft.ai_filter;
+    let n = 0;
+    TRIAGE.QUESTIONS.filter(q => q.apply).forEach(q => {
+        const value = (f.answers[q.id] || {}).valor;
+        if (!value || value === 'sin_datos' || getPath(draft, q.apply)) return;
+        setPath(draft, q.apply, value);
+        n++;
+    });
+    if (n) hasUnsavedChanges = true;
+    renderModalBody();
+    showToast(n ? `✓ ${n} campo(s) del filtro llenados: revísenlos y guarden` : 'Los campos del filtro ya tenían respuesta', n ? 'success' : 'warning');
+}
+
+async function evaluateOpenIdea() {
+    if (!String(draft.title || '').trim()) return;
+    // Se evalúa lo guardado: primero se guardan los cambios pendientes.
+    if (hasUnsavedChanges || !getItem(currentEditingId)) await persistIdea('');
+    showToast('🤖 Evaluando con Gemini…', 'success', 2000);
+    try {
+        draft.ai_filter = await evaluateIdea(getItem(currentEditingId));
+        renderModalBody();
+        showToast(`✓ Evaluada: ${findOption(TRIAGE.VERDICTS, draft.ai_filter.verdict).label}`);
+    } catch (e) {
+        showToast(`❌ ${e.message}`, 'error', 8000);
+    }
 }
 
 // --- Plan de trabajo según el tipo ---
@@ -430,13 +733,12 @@ async function addPlanTasks() {
     showToast(`✓ ${pending.length} tarea(s) agregadas al tablero`);
 }
 
-async function copyPrompt() {
-    const text = benchmarkPrompt(draft);
-    const box = document.getElementById('promptBox');
+async function copyText(text, boxId) {
+    const box = document.getElementById(boxId);
     box.value = text;
     try {
         await navigator.clipboard.writeText(text);
-        showToast('✓ Prompt copiado: pégalo en la IA que prefieran');
+        showToast('✓ Prompt copiado: pégalo en la IA');
         box.hidden = true;
     } catch (e) {
         // Sin acceso al portapapeles: se muestra para copiarlo a mano.
@@ -515,6 +817,7 @@ function renderModalBody() {
         </div>
         <div class="req-box" id="reqBox"></div>
         ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}
+        ${reached <= ideaStageIndex('benchmark') ? sectionTriage(d) : ''}
         ${reached >= 1 ? sectionPlan(d, false) : ''}`;
     openKeys.forEach(([key, open]) => {
         const el = body.querySelector(`details[data-fold="${key}"]`);
@@ -640,7 +943,23 @@ function handleModalAction(action, el) {
             draft.benchmark.refs.splice(Number(el.dataset.index), 1);
             hasUnsavedChanges = true;
             return renderModalBody();
-        case 'copy-prompt': return copyPrompt();
+        case 'copy-prompt': return copyText(benchmarkPrompt(draft), 'promptBox');
+        case 'copy-consolidation':
+            if (!draft.benchmark.research.some(r => String(r.text || '').trim())) {
+                return showToast('Primero peguen en el paso 2 la respuesta de al menos una IA', 'warning');
+            }
+            return copyText(consolidationPrompt(draft), 'consolidationBox');
+        case 'import-refs': return importRefs();
+        case 'add-research':
+            draft.benchmark.research.push({ ai: L.BENCHMARK_AIS[draft.benchmark.research.length] || L.BENCHMARK_AIS[0], text: '' });
+            hasUnsavedChanges = true;
+            return renderModalBody();
+        case 'remove-research':
+            draft.benchmark.research.splice(Number(el.dataset.index), 1);
+            hasUnsavedChanges = true;
+            return renderModalBody();
+        case 'ai-apply': return applyTriage();
+        case 'ai-eval': return evaluateOpenIdea();
         case 'plan-tasks': return addPlanTasks();
         case 'remove-validation':
             draft.validations.splice(Number(el.dataset.index), 1);
@@ -749,7 +1068,9 @@ registerView({
         'delete-idea': (el, e) => {
             e.stopPropagation();
             deleteIdea(el.dataset.id);
-        }
+        },
+        'ai-triage': () => runTriage(),
+        'ai-promote': () => promoteIdeas()
     }
 });
 

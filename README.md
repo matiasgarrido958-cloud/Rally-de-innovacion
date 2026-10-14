@@ -54,6 +54,37 @@ reciclaje (ya ganaron Hojabeta y The Last Resort), si faltan fuentes APA o si ha
 Temas, preguntas del filtro y del semáforo, horas de trabajo (`WORK_HOURS`), planes por tipo, criterios, motivos de descarte, tareas, checklists y bloques del pitch se
 editan en `js/lineamientos.js`.
 
+## Primer filtro con IA (Gemini)
+
+Después de la lluvia de ideas, en *Banco* y *Filtro* el botón **Evaluar con Gemini** revisa una por una
+las ideas nuevas o cambiadas. Gemini solo responde preguntas cerradas sobre lo que dice la idea (tipo,
+beneficiario específico, problema claro, quién paga, qué mostrar en el video, si cabe en el reporte) y
+la página calcula el veredicto con una regla fija: un "no" en una pregunta clave = **No pasa**; un
+"sin datos" u otro "no" = **Dudosa**; el resto **Pasa**. Es una sugerencia: el botón *Pasar al Filtro*
+mueve las que pasan, y en la ventana de cada idea *Aplicar sugerencias al filtro* llena solo los campos
+vacíos. Las preguntas y sus reglas se editan en `AI_TRIAGE` dentro de `js/lineamientos.js`.
+
+La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
+`supabase/functions/filtrar-idea`, que solo responde a usuarios con sesión.
+
+1. Saca una API key gratuita en [Google AI Studio](https://aistudio.google.com/apikey).
+2. En Supabase: **Edge Functions → Deploy a new function → Via Editor**, nombre `filtrar-idea`, pega
+   el contenido de `supabase/functions/filtrar-idea/index.ts` y despliega (deja *Verify JWT* activado).
+3. **Edge Functions → Secrets**: agrega `GEMINI_API_KEY` con tu clave. Opcional: `GEMINI_MODEL`
+   (por defecto `gemini-2.5-flash`).
+
+En el nivel gratuito Google limita las consultas por minuto (la página espera 6 s entre ideas,
+`DELAY_MS`) y puede usar lo enviado para mejorar sus modelos. En modo local el botón queda deshabilitado.
+
+## Benchmark con IA investigadora
+
+El benchmark no usa la API: cada integrante usa el modo investigador de su IA (Claude, ChatGPT, Gemini,
+Perplexity). En la ventana de la idea: (1) *Copiar prompt de investigación*; (2) pegar la respuesta de
+cada IA; (3) *Copiar prompt para depurar*, que junta todas las respuestas para depurarlas en Claude o
+ChatGPT Pro, pegar el resultado e *Importar referentes*. Los prompts piden terminar con un bloque
+`REFERENTES` (`Nombre | País | Enlace | Qué hace | Diferencia`) que la página lee; lo marcado
+"(verificar)" queda marcado en el nombre.
+
 ## Estructura
 
 ```
@@ -67,6 +98,7 @@ js/ideas.js           Flujo de ideas y su ventana de edición
 js/vistas.js          Inicio, Preparación, Equipo, Temas, Tareas, Pitch, Entrega y Bitácora
 js/main.js            Inicio de sesión y arranque
 supabase/schema.sql   Tabla rally_items + políticas RLS
+supabase/functions/filtrar-idea/index.ts   Edge Function del primer filtro con Gemini
 ```
 
 Al cambiar CSS o JS, actualiza el número `?v=` de los `<link>`/`<script>` en `index.html`

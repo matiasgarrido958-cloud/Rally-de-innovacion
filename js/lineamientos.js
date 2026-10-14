@@ -65,8 +65,45 @@ window.LINEAMIENTOS = {
         ]
     },
 
+    // Primer filtro con IA (después de la lluvia de ideas): Gemini lee cada idea y
+    // responde solo preguntas cerradas; el veredicto lo calcula la página con una regla
+    // fija y el equipo decide. Pasa por la Edge Function supabase/functions/filtrar-idea.
+    // help: definición exacta que recibe el modelo (un modelo simple necesita reglas claras).
+    // apply: campo del filtro que se llena con «Aplicar sugerencias» (solo si está vacío).
+    // key: un "no" en esta pregunta = No pasa; "sin datos" = Dudosa.
+    AI_TRIAGE: {
+        FUNCTION: 'filtrar-idea',
+        DELAY_MS: 6000,
+        QUESTIONS: [
+            { id: 'tipo', label: '¿Producto, servicio o ambos?', apply: 'offering',
+                options: ['producto', 'servicio', 'mixto', 'sin_datos'],
+                help: 'producto = algo físico o un dispositivo que se fabrica; servicio = una prestación, plataforma o app; mixto = un dispositivo con un servicio asociado; sin_datos = la descripción no permite saberlo.' },
+            { id: 'beneficiario', label: '¿El beneficiario es directo y específico?', apply: 'filter.beneficiario', key: true,
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = nombra un grupo concreto de personas u organizaciones (por ejemplo «adultos mayores que viven solos en comunas rurales»); no = es genérico («la sociedad», «las personas», «todos», «el medio ambiente»); sin_datos = no se menciona.' },
+            { id: 'problema', label: '¿Se entiende qué problema resuelve?', key: true,
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = se puede decir en una frase qué necesidad o dolor del beneficiario resuelve; no = describe una tecnología o un producto sin un problema claro; sin_datos = la descripción es demasiado corta para saberlo.' },
+            { id: 'quien_paga', label: '¿Se identifica quién pagaría?', apply: 'filter.economica', key: true,
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = la idea nombra o deja claro un pagador (el usuario, un municipio, una empresa, una ONG, el Estado); no = por su naturaleza nadie la pagaría ni la financiaría; sin_datos = no se menciona y no es evidente.' },
+            { id: 'demo', label: '¿Hay algo concreto que mostrar en un video de 2 min?', apply: 'feasibility.demo',
+                options: ['si', 'medio', 'no'],
+                help: 'si = se puede mostrar una maqueta 3D, un mockup de pantalla o un flujo paso a paso; medio = se puede, pero solo con bastante trabajo; no = es un concepto abstracto sin nada visible que mostrar.' },
+            { id: 'reporte', label: '¿Cabe en el reporte pautado?', apply: 'filter.reporte', key: true,
+                options: ['si', 'no'],
+                help: 'si = se puede explicar con problema, beneficiario, solución, costos e impacto en un reporte breve; no = es demasiado amplia (un sistema nacional completo, varias soluciones juntas) o demasiado vaga para ese formato.' }
+        ],
+        VERDICTS: [
+            { id: 'pasa', label: 'Pasa', color: 'var(--k-good)' },
+            { id: 'dudosa', label: 'Dudosa', color: 'var(--k-s4)' },
+            { id: 'no_pasa', label: 'No pasa', color: 'var(--k-bad)' }
+        ]
+    },
+
     // Benchmark (fase 2): lo hace el equipo con investigación propia y las IA que
     // quiera. La página arma el prompt para copiar y registra los referentes.
+    BENCHMARK_AIS: ['Claude', 'ChatGPT', 'Gemini', 'Perplexity', 'Otra'],
     BENCHMARK_MIN_REFS: 2,
     BENCHMARK_TRENDS: [
         { id: 'crece', label: 'En crecimiento', color: 'var(--k-good)' },

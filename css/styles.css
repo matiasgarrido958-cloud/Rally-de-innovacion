@@ -297,6 +297,10 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .filter-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .filter-row > span { flex: 1; min-width: 200px; }
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
+.ai-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.ai-bar-text { display: flex; flex-direction: column; gap: 4px; min-width: 240px; flex: 1; }
+.ai-bar .btn[disabled], .ai-actions .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+.research-ai { width: auto; padding: 4px 8px; font-size: 13px; font-weight: 700; }
 .prompt-box { font-family: var(--font-mono); font-size: 12px; }
 .plan-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 8px 0; border-top: 1px solid var(--border); cursor: pointer; }
 .plan-item:first-of-type { border-top: 0; }
