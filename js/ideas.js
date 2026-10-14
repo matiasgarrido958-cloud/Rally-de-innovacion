@@ -134,6 +134,18 @@ const TRIAGE_VALUES = {
     mixto: { label: 'Producto + servicio', color: 'var(--k-t2)' }
 };
 let triageRun = null; // { done, total } mientras se evalúa en lote
+let lastEvaluation = null; // { id, text } aviso "evaluación lista" en la ventana abierta
+
+function clockTime(iso) {
+    return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+}
+
+// Texto que dice si el veredicto cambió respecto de la evaluación anterior.
+function verdictChange(before, after) {
+    const label = id => findOption(TRIAGE.VERDICTS, id).label;
+    if (!before) return `quedó en ${label(after)}`;
+    return before === after ? `sigue en ${label(after)} (sin cambios)` : `cambió de ${label(before)} a ${label(after)}`;
+}
 
 // Lo que recibe la IA: solo lo que el equipo escribió en la idea.
 function triageInput(data) {
@@ -249,11 +261,16 @@ async function runTriage() {
     triageRun = { done: 0, total: pending.length };
     render();
     let error = null;
+    let changed = 0;
+    const counts = {};
     for (const [n, item] of pending.entries()) {
         // Pausa entre consultas para no pasar el límite por minuto del nivel gratuito.
         if (n) await new Promise(r => setTimeout(r, TRIAGE.DELAY_MS));
         try {
-            await evaluateIdea(item);
+            const before = (ideaData(getItem(item.id) || item).ai_filter || {}).verdict;
+            const after = (await evaluateIdea(item)).ai_filter.verdict;
+            if (before && before !== after) changed++;
+            counts[after] = (counts[after] || 0) + 1;
             triageRun.done++;
         } catch (e) {
             error = e;
@@ -265,7 +282,10 @@ async function runTriage() {
     triageRun = null;
     requestRender();
     if (error) showToast(`❌ ${error.message} (${done} de ${total} evaluadas; esas quedan guardadas)`, 'error', 9000);
-    else showToast(`✓ ${total} idea(s) evaluadas con Gemini`);
+    else {
+        const summary = TRIAGE.VERDICTS.filter(v => counts[v.id]).map(v => `${counts[v.id]} ${v.label}`).join(', ');
+        showToast(`✓ Evaluación lista (${clockTime(new Date().toISOString())}): ${total} idea(s) · ${summary}${changed ? ` · ${changed} cambiaron de veredicto` : ''}`, 'success', 7000);
+    }
 }
 
 // Banco → Filtro: todas las ideas que ya tienen idea, tema y beneficiario.
@@ -574,7 +594,8 @@ function sectionFilter(d, open) {
     return fold('2 · Filtro rápido (fase 1)', open, `
         <div class="subgroup">
             <div class="subgroup-title">1 · Capa IA ${verdict ? chip(verdict) : ''}</div>
-            ${f ? `<p class="form-hint">${escapeHtml(f.resumen)} · ${escapeHtml(f.model)}, ${escapeHtml(timeAgo(f.at))}. Lo marcado con 🤖 lo respondió Gemini: corríjanlo si no corresponde.</p>`
+            ${lastEvaluation && lastEvaluation.id === currentEditingId ? `<div class="req ok">${escapeHtml(lastEvaluation.text)}</div>` : ''}
+            ${f ? `<p class="form-hint">${escapeHtml(f.resumen)} · Evaluada a las ${escapeHtml(clockTime(f.at))} (${escapeHtml(timeAgo(f.at))}) con ${escapeHtml(f.model)}. Lo marcado con 🤖 lo respondió Gemini: corríjanlo si no corresponde.</p>`
                 : `<p class="form-hint">${LOCAL_MODE ? 'En modo local no hay IA: respondan estas preguntas a mano.' : 'Todavía no se evalúa con Gemini. También se pueden responder a mano.'}</p>`}
             ${stale ? '<div class="req warn">La idea cambió desde la evaluación: vuelve a evaluarla.</div>' : ''}
             ${aiRows}
@@ -764,13 +785,22 @@ async function evaluateOpenIdea() {
     // Se evalúa lo guardado: primero se guardan los cambios pendientes.
     if (hasUnsavedChanges || !getItem(currentEditingId)) await persistIdea('');
     showToast('🤖 Evaluando con Gemini…', 'success', 2000);
+    const button = document.querySelector('[data-modal-action="ai-eval"]');
+    if (button) {
+        button.disabled = true;
+        button.textContent = '🤖 Evaluando…';
+    }
     try {
+        const before = draft.ai_filter ? draft.ai_filter.verdict : '';
         draft = await evaluateIdea(getItem(currentEditingId));
         hasUnsavedChanges = false;
+        const text = `✓ Evaluación lista a las ${clockTime(draft.ai_filter.at)}: ${verdictChange(before, draft.ai_filter.verdict)} · ${draft.ai_filter.model}`;
+        lastEvaluation = { id: currentEditingId, text };
         renderModalBody();
-        showToast(`✓ Evaluada: ${findOption(TRIAGE.VERDICTS, draft.ai_filter.verdict).label}`);
+        showToast(text, 'success', 6000);
     } catch (e) {
         showToast(`❌ ${e.message}`, 'error', 8000);
+        renderModalBody();
     }
 }
 
@@ -970,6 +1000,7 @@ function closeIdea(force = false) {
     if (!force && hasUnsavedChanges && !confirm('¿Cerrar sin guardar los cambios?')) return;
     document.getElementById('modal').classList.remove('open');
     currentEditingId = null;
+    lastEvaluation = null;
     draft = null;
     hasUnsavedChanges = false;
     render();
