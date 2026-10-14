@@ -74,7 +74,9 @@ window.LINEAMIENTOS = {
     // key: un "no" en esta pregunta = No pasa; "sin datos" = Dudosa.
     // discard: motivo con que se descarta si esta pregunta da "no".
     AI_TRIAGE: {
-        FUNCTION: 'filtrar-idea',
+        // Dirección (slug) de la Edge Function en Supabase: la que aparece en su URL
+        // (…/functions/v1/<slug>), que puede no coincidir con el nombre visible.
+        FUNCTION: 'rapid-action',
         DELAY_MS: 6000,
         // Si Gemini está saturado (503) o se pasa el límite por minuto (429), se reintenta
         // tras estas esperas antes de dar error.

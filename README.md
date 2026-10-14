@@ -79,6 +79,9 @@ La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 1. Saca una API key gratuita en [Google AI Studio](https://aistudio.google.com/apikey).
 2. En Supabase: **Edge Functions → Deploy a new function → Via Editor**, nombre `filtrar-idea`, pega
    el contenido de `supabase/functions/filtrar-idea/index.ts` y despliega (deja *Verify JWT* activado).
+   La página llama a la función por su dirección (el final de su URL, `…/functions/v1/<dirección>`),
+   que puede no coincidir con el nombre visible: ponla en `AI_TRIAGE.FUNCTION` de `js/lineamientos.js`
+   (hoy `rapid-action`).
 3. **Edge Functions → Secrets**: agrega `GEMINI_API_KEY` con tu clave. Nada más: la función detecta
    sola los modelos Gemini disponibles para la clave y los ordena (flash, luego lite, luego pro; la
    versión más nueva primero). Si uno está saturado, sin cuota o falla, usa el siguiente; la cuota
