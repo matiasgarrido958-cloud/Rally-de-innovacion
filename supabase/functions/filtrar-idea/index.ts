@@ -5,10 +5,10 @@
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  clave de Google AI Studio (https://aistudio.google.com/apikey)
-//   GEMINI_MODEL    opcional; por defecto gemini-2.5-flash
+//   GEMINI_MODEL    opcional; por defecto gemini-3.8-flash
 // Deja activado "Verify JWT": solo usuarios con sesión en el workspace pueden usarla.
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 const CORS = {
     'Access-Control-Allow-Origin': '*',

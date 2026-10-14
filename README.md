@@ -71,7 +71,7 @@ La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 2. En Supabase: **Edge Functions → Deploy a new function → Via Editor**, nombre `filtrar-idea`, pega
    el contenido de `supabase/functions/filtrar-idea/index.ts` y despliega (deja *Verify JWT* activado).
 3. **Edge Functions → Secrets**: agrega `GEMINI_API_KEY` con tu clave. Opcional: `GEMINI_MODEL`
-   (por defecto `gemini-2.5-flash`).
+   (por defecto `gemini-3.8-flash`).
 
 En el nivel gratuito Google limita las consultas por minuto (la página espera 6 s entre ideas,
 `DELAY_MS`) y puede usar lo enviado para mejorar sus modelos. En modo local el botón queda deshabilitado.
