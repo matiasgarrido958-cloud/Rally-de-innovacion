@@ -1,4 +1,4 @@
-// Correlaciones entre ideas (Filtro rápido, Benchmark y Ficha de idea).
+// Correlaciones entre ideas (solo en Ficha de idea).
 // «Buscar correlaciones» manda a Gemini las ideas de la etapa abierta; «Correlacionar
 // selección» solo las marcadas. Gemini propone grupos de ideas relacionadas con una
 // idea combinada; el equipo decide cuáles crear. El bloque nuevo entra en la etapa
@@ -6,7 +6,7 @@
 // salió (data.combined). Las ideas originales no se modifican.
 // Usa la misma Edge Function del filtro con mode: 'correlacionar'.
 
-const CORRELATION_STAGES = ['filtro', 'benchmark', 'ficha'];
+const CORRELATION_STAGES = ['ficha'];
 const CORRELATION_TIMEOUT_MS = 100000;
 const RELATION_LABELS = {
     duplicada: 'Duplicadas', complementaria: 'Complementarias', mismo_problema: 'Mismo problema',
@@ -51,10 +51,8 @@ async function findCorrelations(selection) {
     if (correlation && correlation.running) return;
     if (LOCAL_MODE) return showToast('Las correlaciones usan Gemini: necesitan Supabase, no funcionan en modo local', 'warning');
     const stage = ideaTab;
-    const list = selection
-        ? [...ideaSelection].map(getItem).filter(Boolean)
-        : ideas().filter(i => i.data.status === stage);
-    if (list.length < 2) return showToast(selection ? 'Marca al menos 2 ideas' : 'Se necesitan al menos 2 ideas en esta etapa', 'warning');
+    const list = selection ? selectedInStage() : ideas().filter(i => i.data.status === stage);
+    if (list.length < 2) return showToast(selection ? `Marca al menos 2 ideas de ${findOption(IDEA_STAGES, stage).label}` : 'Se necesitan al menos 2 ideas en esta etapa', 'warning');
     correlation = { stage, selection, running: true, total: list.length, started: Date.now(), groups: [] };
     const timer = setInterval(requestRender, 1000);
     render();
@@ -177,11 +175,16 @@ function dismissCorrelation(index) {
 
 // --- Vista ---
 
+// Las marcadas que están en la etapa abierta (la selección puede tener de otras etapas).
+function selectedInStage() {
+    return ideaSelection ? [...ideaSelection].map(getItem).filter(i => i && i.data.status === ideaTab) : [];
+}
+
 function correlationButtons(selectionOnly = false) {
     if (!CORRELATION_STAGES.includes(ideaTab)) return '';
     const running = correlation && correlation.running;
     if (selectionOnly) {
-        const n = ideaSelection ? ideaSelection.size : 0;
+        const n = selectedInStage().length;
         return `<button class="btn btn-ghost" data-action="correlate-selected" ${LOCAL_MODE || running || n < 2 ? 'disabled' : ''} title="Gemini busca la relación entre las ideas marcadas y propone un bloque combinado">🔗 Correlacionar ${n}</button>`;
     }
     const n = ideas().filter(i => i.data.status === ideaTab).length;

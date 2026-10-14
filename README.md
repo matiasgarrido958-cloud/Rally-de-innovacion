@@ -133,13 +133,13 @@ En el nivel gratuito Google limita las consultas por minuto (la página espera 6
 
 ## Correlaciones entre ideas
 
-En **Filtro rápido**, **Benchmark** y **Ficha de idea** hay dos botones que usan la misma Edge Function
+Solo en **Ficha de idea** hay dos botones que usan la misma Edge Function
 (`mode: 'correlacionar'`, una sola consulta a Gemini por búsqueda):
 
 - **🔗 Buscar correlaciones**: manda todas las ideas de la etapa abierta. Gemini devuelve grupos de
   ideas duplicadas, complementarias, del mismo problema o del mismo beneficiario, y para cada grupo
   una idea combinada (título, beneficiario, problema, descripción y por qué juntas son más fuertes).
-- **🔗 Correlacionar N** (en *☑ Seleccionar*): solo las ideas marcadas, a voluntad.
+- **🔗 Correlacionar N** (en *☑ Seleccionar*): solo las ideas marcadas que están en Ficha, a voluntad.
 
 Las propuestas aparecen en un panel; **nada se crea solo**. *Crear bloque combinado* agrega una idea
 nueva en la misma etapa con lo de las originales: el problema (si es el mismo), los campos de la
