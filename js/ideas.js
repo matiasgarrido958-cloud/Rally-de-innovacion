@@ -205,9 +205,27 @@ function applyTriage(data, answers) {
     data.ai_set = set;
 }
 
+// Errores pasajeros de Gemini: servidor saturado o límite por minuto.
+function isTransient(error) {
+    return [429, 502, 503, 504].includes(error.status) && /\b(429|503|504)\b|UNAVAILABLE|high demand|límite/i.test(error.message);
+}
+
+async function callTriage(body) {
+    const delays = TRIAGE.RETRY_DELAYS_MS || [];
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await supabaseFunction(TRIAGE.FUNCTION, body);
+        } catch (error) {
+            if (attempt >= delays.length || !isTransient(error)) throw error;
+            showToast(`⏳ Gemini está saturado: reintento en ${Math.round(delays[attempt] / 1000)} s…`, 'warning', delays[attempt]);
+            await new Promise(r => setTimeout(r, delays[attempt]));
+        }
+    }
+}
+
 async function evaluateIdea(item) {
     const data = ideaData(item);
-    const result = await supabaseFunction(TRIAGE.FUNCTION, {
+    const result = await callTriage({
         idea: triageInput(data),
         questions: TRIAGE.QUESTIONS.map(({ id, label, help, options }) => ({ id, label, help, options }))
     });

@@ -76,6 +76,9 @@ window.LINEAMIENTOS = {
     AI_TRIAGE: {
         FUNCTION: 'filtrar-idea',
         DELAY_MS: 6000,
+        // Si Gemini está saturado (503) o se pasa el límite por minuto (429), se reintenta
+        // tras estas esperas antes de dar error.
+        RETRY_DELAYS_MS: [5000, 15000, 30000],
         QUESTIONS: [
             { id: 'tipo', label: '¿Producto, servicio o ambos?', apply: 'offering',
                 options: ['producto', 'servicio', 'mixto', 'sin_datos'],
