@@ -6,7 +6,7 @@
 // requisitos; retroceder siempre se puede; descartar guarda el motivo.
 
 const IDEA_STAGES = [
-    { id: 'banco', label: 'Banco de ideas', color: 'var(--k-s1)', hint: 'Lluvia de ideas: cada idea entra con un ID, una línea, tema y beneficiario directo. Sin evaluar todavía.' },
+    { id: 'banco', label: 'Banco de ideas', color: 'var(--k-s1)', hint: 'Lluvia de ideas de solución: cada idea ataca un problema de la vista Desafíos. Sin evaluar todavía.' },
     { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: `Fase 1 en dos capas: Gemini responde lo que se deduce del texto y el equipo lo que la IA no puede saber; sale el semáforo en ${L.WORK_HOURS} h. Si falla, se descarta.` },
     { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Fase 2: qué se está haciendo en el mundo. El equipo investiga (con IA y fuentes propias) y decide si la idea tiene diferenciación.' },
     { id: 'ficha', label: 'Ficha de idea', color: 'var(--k-s3)', hint: 'Ficha a–k para cada idea que sigue viva.' },
@@ -147,9 +147,11 @@ function verdictChange(before, after) {
     return before === after ? `sigue en ${label(after)} (sin cambios)` : `cambió de ${label(before)} a ${label(after)}`;
 }
 
-// Lo que recibe la IA: solo lo que el equipo escribió en la idea.
+// Lo que recibe la IA: el desafío y el problema que ataca la idea, y la solución.
 function triageInput(data) {
+    const ctx = ideaContext(data);
     return {
+        desafio: ctx.desafio, problema: ctx.problema,
         idea: data.title || '', nombre: data.name || '',
         tema: data.theme ? findOption(L.THEMES, data.theme).label : '',
         beneficiario: data.beneficiary || '', notas: data.notes || ''
@@ -331,27 +333,41 @@ async function runTriage() {
 // --- Modo de prueba (?prueba en la URL): 20 ideas de ejemplo para medir el lote ---
 
 const TEST_PREFIX = '[PRUEBA]';
-const TEST_IDEAS = [
-    ['Huerto vertical hexagonal automatizado para departamentos', 'Familias en departamentos sin patio en Santiago', 'Lo compran las familias; kit a 60 mil pesos'],
-    ['Plataforma para mejorar la sociedad', 'La sociedad', ''],
-    ['Sensor de humedad para riego de plazas municipales', 'Municipios con áreas verdes en zonas de sequía', 'Lo paga el municipio con fondos de áreas verdes'],
-    ['App de rutas accesibles para personas en silla de ruedas', 'Usuarios de silla de ruedas en el centro de Santiago', ''],
-    ['Compostera comunitaria con medición de residuos', 'Juntas de vecinos de comunas con alto volumen de basura', 'Fondo concursable municipal de reciclaje'],
-    ['Algo con inteligencia artificial', 'Todos', ''],
-    ['Filtro de agua de bajo costo para escuelas rurales', 'Escuelas rurales sin agua potable en la región de Coquimbo', 'Financia el Ministerio de Educación vía programa de infraestructura'],
-    ['Pulsera que avisa caídas de adultos mayores que viven solos', 'Adultos mayores que viven solos', 'La pagan los hijos con suscripción mensual'],
-    ['Marketplace de ropa usada entre universitarios', 'Estudiantes universitarios de Santiago', 'Comisión del 10% por venta'],
-    ['Sistema nacional de salud digital integrado para todo Chile', 'Todos los chilenos', 'El Estado'],
-    ['Paneles solares plegables para ferias libres', 'Feriantes de ferias libres sin conexión eléctrica', ''],
-    ['Bot que traduce trámites municipales a lenguaje simple', 'Migrantes que hacen trámites en municipalidades', 'Lo contrata la municipalidad'],
-    ['Maceta inteligente', '', ''],
-    ['Biofiltro de aguas grises para viviendas sociales', 'Familias de viviendas sociales con escasez hídrica', 'Subsidio habitacional del MINVU'],
-    ['Red de bicicletas compartidas eléctricas en campus', 'Estudiantes y funcionarios de la UDLA', 'La universidad paga y cobra una tarifa baja'],
-    ['Juego educativo sobre reciclaje para niños', 'Niños de 6 a 10 años de colegios municipales', ''],
-    ['Detector de fugas de gas para cocinas de casas antiguas', 'Familias en casas con instalaciones de gas antiguas', 'Venta directa a 25 mil pesos'],
-    ['Plataforma de voluntariado', 'Personas que quieren ayudar', ''],
-    ['Techo verde modular para paraderos de micro', 'Usuarios de paraderos expuestos al calor en verano', 'Concesión de publicidad en el paradero'],
-    ['Mapa colaborativo de puntos de agua potable gratis', 'Ciclistas y deportistas urbanos', 'Patrocinio de marcas deportivas']
+// Desafíos con sus problemas (algunos mal planteados a propósito) y, para cada
+// problema, ideas de solución (algunas que no lo atacan, a propósito).
+const TEST_DATA = [
+    { title: 'Gestión de residuos en comunas urbanas', org: 'ONG Ciudad Limpia', theme: 'sustentabilidad',
+        description: 'Reducir los residuos que llegan a vertederos desde barrios residenciales.',
+        problems: [
+            { text: 'Los residuos orgánicos de las juntas de vecinos terminan en el vertedero porque no tienen dónde tratarlos.', affected: 'Juntas de vecinos de comunas con alto volumen de basura', evidence: 'Más de la mitad de la basura domiciliaria es orgánica',
+                ideas: [['Compostera comunitaria con medición de residuos', 'Fondo concursable municipal de reciclaje'], ['App de recetas saludables', ''], ['Retiro en bicicleta de orgánicos para compostaje', 'La municipalidad paga por kilo desviado']] },
+            { text: 'Falta una app de reciclaje.', affected: 'Todos', evidence: '',
+                ideas: [['Plataforma para mejorar la sociedad', ''], ['Juego educativo sobre reciclaje para niños', '']] }
+        ] },
+    { title: 'Acceso a agua en zonas de sequía', org: 'Fundación Agua Viva', theme: 'sustentabilidad',
+        description: 'Mejorar el acceso a agua segura en comunidades afectadas por la sequía.',
+        problems: [
+            { text: 'Las escuelas rurales de Coquimbo dependen de camiones aljibe y el agua llega con baja calidad.', affected: 'Estudiantes de escuelas rurales de la región de Coquimbo', evidence: 'Reportes de la DGA sobre camiones aljibe',
+                ideas: [['Filtro de agua de bajo costo para escuelas rurales', 'Ministerio de Educación vía programa de infraestructura'], ['Biofiltro de aguas grises para viviendas sociales', 'Subsidio habitacional del MINVU'], ['Marketplace de ropa usada entre universitarios', 'Comisión del 10% por venta']] },
+            { text: 'Las plazas municipales se riegan de más en verano por falta de control.', affected: 'Municipios con áreas verdes en zonas de sequía', evidence: '',
+                ideas: [['Sensor de humedad para riego de plazas municipales', 'Lo paga el municipio con fondos de áreas verdes'], ['Mapa colaborativo de puntos de agua potable gratis', 'Patrocinio de marcas deportivas']] }
+        ] },
+    { title: 'Envejecimiento activo y seguro', org: 'Fundación Mayores', theme: 'bienestar',
+        description: 'Mejorar la seguridad y autonomía de las personas mayores.',
+        problems: [
+            { text: 'Los adultos mayores que viven solos pueden pasar horas en el suelo tras una caída sin que nadie lo sepa.', affected: 'Adultos mayores que viven solos', evidence: 'Las caídas son la principal causa de lesiones en mayores de 65',
+                ideas: [['Pulsera que avisa caídas de adultos mayores que viven solos', 'La pagan los hijos con suscripción mensual'], ['Detector de fugas de gas para cocinas de casas antiguas', 'Venta directa a 25 mil pesos'], ['Algo con inteligencia artificial', '']] },
+            { text: 'La salud.', affected: '', evidence: '',
+                ideas: [['Sistema nacional de salud digital integrado para todo Chile', 'El Estado']] }
+        ] },
+    { title: 'Ciudades inclusivas y accesibles', org: 'Corporación Ciudad para Todos', theme: 'logistica',
+        description: 'Facilitar la movilidad y los trámites de personas con barreras de acceso.',
+        problems: [
+            { text: 'Las personas en silla de ruedas no saben qué veredas y estaciones del centro son accesibles hasta que llegan.', affected: 'Usuarios de silla de ruedas en el centro de Santiago', evidence: '',
+                ideas: [['App de rutas accesibles para personas en silla de ruedas', ''], ['Techo verde modular para paraderos de micro', 'Concesión de publicidad en el paradero']] },
+            { text: 'Los migrantes no entienden los trámites municipales y pierden horas o beneficios.', affected: 'Migrantes que hacen trámites en municipalidades', evidence: 'Encuesta municipal de atención',
+                ideas: [['Bot que traduce trámites municipales a lenguaje simple', 'Lo contrata la municipalidad'], ['Plataforma de voluntariado', ''], ['Paneles solares plegables para ferias libres', '']] }
+        ] }
 ];
 
 function testMode() {
@@ -359,19 +375,32 @@ function testMode() {
 }
 
 async function createTestIdeas() {
-    for (const [i, [title, beneficiary, notes]] of TEST_IDEAS.entries()) {
-        const data = { ...blankIdeaData(), title, name: `${TEST_PREFIX} ${i + 1}`, theme: L.THEMES[i % L.THEMES.length].id, beneficiary, notes };
-        await saveItem(makeItem(nextIdeaId(), 'idea', data, nextPosition('idea')), { rerender: false });
+    let n = 0;
+    for (const c of TEST_DATA) {
+        const cid = nextShortId(DES_PREFIX, 'DS');
+        await saveItem(makeItem(`${DES_PREFIX}${cid}`, 'setting', { title: `${TEST_PREFIX} ${c.title}`, org: c.org, description: c.description, theme: c.theme }, nextPosition('setting')), { rerender: false });
+        for (const p of c.problems) {
+            const pid = nextShortId(PRO_PREFIX, 'P');
+            await saveItem(makeItem(`${PRO_PREFIX}${pid}`, 'setting', { desafio_id: cid, text: p.text, affected: p.affected, evidence: p.evidence, test: true }, nextPosition('setting')), { rerender: false });
+            for (const [title, notes] of p.ideas) {
+                const data = { ...blankIdeaData(), title, name: `${TEST_PREFIX} ${++n}`, notes, problem_id: pid };
+                applyProblemLink(data);
+                if (!data.theme) data.theme = c.theme;
+                await saveItem(makeItem(nextIdeaId(), 'idea', data, nextPosition('idea')), { rerender: false });
+            }
+        }
     }
     render();
-    showToast(`✓ ${TEST_IDEAS.length} ideas de prueba creadas en el Banco`);
+    showToast(`✓ Prueba creada: ${TEST_DATA.length} desafíos, ${TEST_DATA.reduce((s, c) => s + c.problems.length, 0)} problemas y ${n} ideas`);
 }
 
 async function deleteTestIdeas() {
     const list = ideas().filter(i => String(i.data.name || '').startsWith(TEST_PREFIX));
-    if (!list.length || !confirm(`¿Eliminar las ${list.length} ideas de prueba?`)) return;
-    for (const item of list) await deleteItem(item.id);
-    showToast(`${list.length} ideas de prueba eliminadas`);
+    const extra = [...challenges().filter(c => String(c.data.title || '').startsWith(TEST_PREFIX)), ...problems().filter(p => p.data.test)];
+    if (!list.length && !extra.length) return;
+    if (!confirm(`¿Eliminar los datos de prueba (${list.length} ideas, ${extra.length} desafíos y problemas)?`)) return;
+    for (const item of [...list, ...extra]) await deleteItem(item.id);
+    showToast('Datos de prueba eliminados');
 }
 
 // Banco → Filtro: todas las ideas que ya tienen idea, tema y beneficiario.
@@ -421,12 +450,12 @@ function triageBar(all) {
         return `
             <div class="ai-bar">
                 <div class="ai-bar-text">
-                    <strong>Lluvia de ideas</strong>
-                    <span class="form-hint">Anoten todo sin evaluar: idea, tema y beneficiario. Al terminar, mándenlas al Filtro rápido, donde Gemini hace el primer descarte.${waiting ? ` ${waiting} idea(s) aún sin tema o beneficiario.` : ''}</span>
+                    <strong>Lluvia de ideas de solución</strong>
+                    <span class="form-hint">Cada idea ataca un problema de la vista Desafíos (botón «+ Idea de solución» en cada problema). Anoten todo sin evaluar; al terminar, mándenlas al Filtro rápido, donde Gemini revisa si la solución ataca el problema.${waiting ? ` ${waiting} idea(s) aún sin problema, solución, tema o beneficiario.` : ''}</span>
                 </div>
                 <div class="ai-actions">
-                    ${testMode() ? `<button class="btn btn-ghost" data-action="test-create">+ 20 ideas de prueba</button>
-                        <button class="btn btn-ghost danger" data-action="test-delete">Borrar ideas de prueba</button>` : ''}
+                    ${testMode() ? `<button class="btn btn-ghost" data-action="test-create">+ Datos de prueba</button>
+                        <button class="btn btn-ghost danger" data-action="test-delete">Borrar datos de prueba</button>` : ''}
                     <button class="btn btn-accent" data-action="send-to-filter" ${sendable ? '' : 'disabled'}>Mandar ${sendable} al Filtro →</button>
                 </div>
             </div>`;
@@ -461,7 +490,8 @@ function ideaRequirements(data, target) {
     const empty = v => !String(v || '').trim();
     switch (target) {
         case 'filtro':
-            if (empty(data.title)) missing.push('Escribe la idea en una línea.');
+            if (empty(ideaContext(data).problema)) missing.push('Elige o escribe el problema que ataca.');
+            if (empty(data.title)) missing.push('Escribe la idea de solución en una línea.');
             if (!data.theme) missing.push('Elige el tema.');
             if (empty(data.beneficiary)) missing.push('Indica el beneficiario directo.');
             break;
@@ -543,6 +573,7 @@ function ideaCard(item) {
             ${data.name && data.title ? `<div class="card-sub">${escapeHtml(data.title)}</div>` : ''}
             <div class="card-tags">
                 ${data.theme ? chip(theme) : ''}
+                ${data.problem_id ? `<span class="chip outline" title="${escapeHtml(ideaContext(data).problema)}">🎯 ${escapeHtml(data.problem_id)}</span>` : ''}
                 ${offering ? `<span class="chip" style="--c:${offering.color}" title="${escapeHtml(offering.hint)}">${offering.icon} ${escapeHtml(offering.label)}</span>` : ''}
                 ${f.level ? `<span class="chip" style="--c:${FEASIBILITY_LEVELS[f.level].color}" title="Semáforo de factibilidad en ${L.WORK_HOURS} h">● ${FEASIBILITY_LEVELS[f.level].label} ${f.points}/${f.max}</span>` : ''}
                 ${data.status === 'filtro' || data.status === 'benchmark' ? triageChip(data) : ''}
@@ -633,15 +664,31 @@ function fold(title, open, body, done = false, key = '') {
 }
 
 function sectionIdea(d, open) {
-    return fold('1 · Idea', open, `
-        ${field('title', 'Idea (1 línea)', d.title, { required: true, placeholder: 'Qué es, en una frase' })}
+    const list = problems();
+    const options = list.map(p => {
+        const c = challengeById(p.data.desafio_id);
+        return `<option value="${escapeHtml(shortId(p))}" ${shortId(p) === d.problem_id ? 'selected' : ''}>${escapeHtml(`${shortId(p)} · ${(p.data.text || 'Sin texto').slice(0, 90)}${c ? ` (${shortId(c)})` : ''}`)}</option>`;
+    }).join('');
+    const p = problemById(d.problem_id);
+    const v = p && p.data.check ? findOption(PCHECK.VERDICTS, p.data.check.verdict) : null;
+    return fold('1 · Problema e idea de solución', open, `
+        <div class="form-group"><label class="form-label">Problema que ataca <span class="req-star">*</span>
+            <span class="form-hint inline">De la vista Desafíos${v ? ` · revisión: ${escapeHtml(v.label)}` : ''}</span></label>
+            <select class="form-select" data-draft="problem_id">
+                <option value="">${list.length ? 'Elegir problema…' : 'Aún no hay problemas: escríbelo abajo'}</option>
+                ${options}
+            </select>
+        </div>
+        ${field('a_desafio', 'Desafío', d.a_desafio, { placeholder: 'Se llena al elegir el problema' })}
+        ${field('b_problema', 'Problema / cuello de botella', d.b_problema, { textarea: true, required: !p, placeholder: 'Qué falla, dónde y a quién' })}
+        ${field('beneficiary', 'Beneficiario directo', d.beneficiary, { required: true, placeholder: 'Quién, específicamente' })}
+        ${field('title', 'Idea de solución (1 línea)', d.title, { required: true, placeholder: 'Qué proponemos, en una frase' })}
         <div class="row-2">
             ${field('name', 'Nombre (opcional)', d.name, { placeholder: 'Nombre de fantasía' })}
             ${field('owner', 'Responsable', d.owner, { list: 'people' })}
         </div>
         <div class="form-group"><label class="form-label">Tema <span class="req-star">*</span></label>${pills('theme', L.THEMES, d.theme)}</div>
-        ${field('beneficiary', 'Beneficiario directo', d.beneficiary, { required: true, placeholder: 'Quién, específicamente' })}
-        ${field('notes', 'Notas / desafío, ONG o empresa', d.notes, { textarea: true })}
+        ${field('notes', 'Notas (quién paga, ONG o empresa, ideas sueltas)', d.notes, { textarea: true })}
     `, ideaRequirements(d, 'filtro').length === 0, 'idea');
 }
 
@@ -1228,6 +1275,10 @@ function setupIdeaModal() {
         setPath(draft, el.dataset.draft, el.type === 'checkbox' ? el.checked : el.value);
         hasUnsavedChanges = true;
         if (el.dataset.draft === 'title' || el.dataset.draft === 'name') renderModalHeader();
+        if (el.dataset.draft === 'problem_id') {
+            applyProblemLink(draft);
+            return renderModalBody();
+        }
         // El tipo cambia el plan de trabajo; las respuestas del semáforo, su resultado.
         if (el.dataset.draft === 'offering' || el.dataset.draft.startsWith('plan_done.')) return renderModalBody();
         if (draft.ai_set && el.dataset.draft in draft.ai_set) return renderModalBody();

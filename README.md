@@ -27,6 +27,25 @@ nada se sube después de H27.
 Las casillas de los checklists guardan quién las marcó y cuándo. Como la cuenta es compartida,
 cada persona escribe su nombre con el botón de usuario (arriba a la derecha) y ese navegador lo recuerda.
 
+## Desafíos → Problemas → Ideas de solución
+
+El proceso parte por el problema, no por la solución:
+
+1. **Desafíos** (vista *Desafíos*): el día de la apertura (H0) se cargan los desafíos tal como vienen en
+   las bases (título, ONG o empresa, descripción, tema).
+2. **Problemas**: para cada desafío, el equipo plantea uno o más problemas o cuellos de botella (qué
+   falla, dónde y a quién; quién lo sufre; dato o evidencia). **Punto 1 de IA:** *Revisar problemas*
+   pide a Gemini si cada problema está dentro de su desafío, es concreto, identifica a quién afecta y
+   no es una solución disfrazada («falta una app…»). Veredicto: **Alineado**, **Revisar** o **No
+   alineado** (reglas en `PROBLEM_CHECK` de `js/lineamientos.js`).
+3. **Ideas de solución**: desde cada problema, *+ Idea de solución* abre una idea nueva en el Banco con
+   el desafío, el problema, el beneficiario y el tema ya llenos (son los campos a y b de la ficha). Si
+   el problema no está Alineado, pide confirmar. **Punto 2 de IA:** en el Filtro rápido, Gemini revisa
+   si la solución ataca ese problema dentro del desafío, junto con el resto de la matriz.
+
+Desafíos y problemas se guardan en `rally_items` con kind `setting` e ids `set:des:DS-01` y
+`set:pro:P-01` (la tabla no admite otros tipos sin migración).
+
 ## Flujo de ideas
 
 Igual que en Fast Check: cada idea avanza de a una etapa cumpliendo los requisitos (la página muestra
@@ -78,8 +97,9 @@ La evaluación en lote sigue aunque una idea falle (se reintenta al volver a apr
 normal, 20 ideas toman ~3 min; con Google saturado, ~10 min.
 
 **Modo de prueba:** abre la página con `?prueba` al final de la dirección
-(`…/Rally-de-innovacion/?prueba`). En *Banco* aparecen *+ 20 ideas de prueba* (marcadas `[PRUEBA]` en el
-nombre, algunas vagas a propósito) y *Borrar ideas de prueba*, para medir el lote con Gemini real.
+(`…/Rally-de-innovacion/?prueba`). En *Banco* aparecen *+ Datos de prueba* (4 desafíos, 8 problemas y 19
+ideas marcadas `[PRUEBA]`; algunos problemas mal planteados y algunas soluciones que no atacan su
+problema, a propósito) y *Borrar datos de prueba*, para probar los dos puntos de IA con Gemini real.
 
 La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 `supabase/functions/filtrar-idea`, que solo responde a usuarios con sesión.
@@ -117,6 +137,7 @@ js/config.js          URL y publishable key de Supabase
 js/lineamientos.js    Contenido base: temas, tareas, checklists, pitch, requisitos
 js/supabase.js        Cliente mínimo de la API REST de Supabase (el mismo de Fast Check)
 js/app.js             Datos, sincronización, edición en línea y utilidades
+js/desafios.js        Desafíos y problemas (punto 1 de IA)
 js/ideas.js           Flujo de ideas y su ventana de edición
 js/vistas.js          Inicio, Preparación, Equipo, Temas, Tareas, Pitch, Entrega y Bitácora
 js/main.js            Inicio de sesión y arranque

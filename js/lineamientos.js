@@ -93,10 +93,10 @@ window.LINEAMIENTOS = {
                 discard: 'Sin beneficiario directo y específico',
                 options: ['si', 'no', 'sin_datos'],
                 help: 'si = nombra un grupo concreto de personas u organizaciones, aunque sea amplio (por ejemplo «adultos mayores que viven solos», «juntas de vecinos de comunas con mucha basura»); no = SOLO si es totalmente genérico («la sociedad», «las personas», «todos», «el medio ambiente», «quien quiera»); sin_datos = no se menciona o es ambiguo.' },
-            { id: 'problema', label: '¿Se entiende qué problema resuelve?', key: true,
-                discard: 'Otro: no se entiende qué problema resuelve',
+            { id: 'alineacion', label: '¿La solución ataca el problema planteado, dentro del desafío?', key: true,
+                discard: 'Otro: la solución no ataca el problema planteado',
                 options: ['si', 'no', 'sin_datos'],
-                help: 'si = se entiende o se deduce razonablemente qué necesidad resuelve, aunque no esté escrita con esas palabras (por ejemplo, una compostera para comunas con mucha basura resuelve el exceso de residuos; un filtro de agua para escuelas sin agua potable resuelve el acceso a agua segura); no = SOLO si es una tecnología sin ningún problema asociado («algo con inteligencia artificial», «una app») o el problema no tiene relación con el beneficiario; sin_datos = no se puede deducir qué problema resuelve.' },
+                help: 'si = la solución actúa directamente sobre el problema escrito (su causa o su efecto) y queda dentro del desafío; no = SOLO si la solución resuelve otro problema distinto al escrito o queda fuera del desafío; sin_datos = no hay problema escrito o no se puede saber.' },
             { id: 'quien_paga', label: '¿Se identifica quién pagaría?', apply: 'filter.economica', key: true,
                 discard: 'Sin factibilidad económica',
                 options: ['si', 'no', 'sin_datos'],
@@ -113,6 +113,35 @@ window.LINEAMIENTOS = {
             { id: 'pasa', label: 'Pasa', color: 'var(--k-good)' },
             { id: 'dudosa', label: 'Dudosa', color: 'var(--k-s4)' },
             { id: 'no_pasa', label: 'No pasa', color: 'var(--k-bad)' }
+        ]
+    },
+
+    // Punto 1 de IA (vista Desafíos): antes de proponer soluciones, Gemini revisa si
+    // cada problema está alineado con su desafío y bien planteado. Mismas reglas que
+    // AI_TRIAGE (help, key); el veredicto lo calcula la página: un "no" en
+    // «alineado» = No alineado; otro "no", "parcial" o "sin datos" en una clave = Revisar.
+    PROBLEM_CHECK: {
+        QUESTIONS: [
+            { id: 'alineado', label: '¿El problema es parte del desafío?', key: true,
+                options: ['si', 'parcial', 'no'],
+                help: 'si = el problema cae dentro de lo que pide el desafío; parcial = toca el desafío solo en parte o de forma indirecta; no = SOLO si es un problema de otro ámbito, fuera del desafío.' },
+            { id: 'concreto', label: '¿Es concreto: qué falla, dónde y a quién?', key: true,
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = dice qué falla o qué cuesta, en qué contexto y a quién le afecta, aunque sea en pocas palabras; no = SOLO si es una frase general sin nada concreto («la contaminación», «la salud»); sin_datos = es demasiado corto para saberlo.' },
+            { id: 'no_solucion', label: '¿Está planteado como problema y no como una solución disfrazada?', key: true,
+                options: ['si', 'no'],
+                help: 'si = describe una dificultad, necesidad o cuello de botella; no = SOLO si en realidad nombra una solución o su ausencia («falta una app», «no existe un sistema de…», «se necesita una plataforma»).' },
+            { id: 'afectado', label: '¿Se identifica quién lo sufre?', key: true,
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = nombra a un grupo concreto de personas u organizaciones; no = SOLO si es totalmente genérico («la sociedad», «todos»); sin_datos = no se menciona.' },
+            { id: 'evidencia', label: '¿Trae un dato o evidencia de que existe?',
+                options: ['si', 'no'],
+                help: 'si = menciona una cifra, un estudio, una fuente o una observación concreta; no = no menciona ninguna (no descarta el problema, solo avisa que hay que buscarla).' }
+        ],
+        VERDICTS: [
+            { id: 'ok', label: 'Alineado', color: 'var(--k-good)' },
+            { id: 'revisar', label: 'Revisar', color: 'var(--k-s4)' },
+            { id: 'no_alineado', label: 'No alineado', color: 'var(--k-bad)' }
         ]
     },
 
