@@ -222,8 +222,8 @@ function isTransient(error) {
     return [429, 502, 503, 504].includes(error.status) && /\b(429|503|504)\b|UNAVAILABLE|high demand|límite/i.test(error.message);
 }
 
-async function callTriage(body) {
-    const delays = TRIAGE.RETRY_DELAYS_MS || [];
+async function callTriage(body, retry = true) {
+    const delays = retry ? TRIAGE.RETRY_DELAYS_MS || [] : [];
     for (let attempt = 0; ; attempt++) {
         try {
             return await supabaseFunction(TRIAGE.FUNCTION, body, false, TRIAGE.TIMEOUT_MS || 0);
@@ -236,12 +236,12 @@ async function callTriage(body) {
     }
 }
 
-async function evaluateIdea(item) {
+async function evaluateIdea(item, { retry = true } = {}) {
     const data = ideaData(item);
     const result = await callTriage({
         idea: triageInput(data),
         questions: TRIAGE.QUESTIONS.map(({ id, label, help, options }) => ({ id, label, help, options }))
-    });
+    }, retry);
     const answers = result.answers || {};
     // Se guarda sobre la versión más reciente, por si alguien la editó mientras tanto.
     const fresh = JSON.parse(JSON.stringify(ideaData(getItem(item.id) || item)));
@@ -254,39 +254,108 @@ async function evaluateIdea(item) {
     return fresh;
 }
 
+function formatDuration(ms) {
+    const total = Math.max(0, Math.round(ms / 1000));
+    return total < 60 ? `${total} s` : `${Math.floor(total / 60)} min ${String(total % 60).padStart(2, '0')} s`;
+}
+
+// Evalúa en lote las ideas nuevas o cambiadas del Filtro. Si una falla sigue con la
+// siguiente; para después de MAX_FAILS seguidas (Google caído o sin cuota).
 async function runTriage() {
     if (triageRun) return;
     if (LOCAL_MODE) return showToast('La capa IA necesita Supabase: no funciona en modo local', 'warning');
     const pending = ideas().filter(i => needsTriage(ideaData(i)));
     if (!pending.length) return showToast('No hay ideas nuevas ni cambiadas por evaluar', 'warning');
-    triageRun = { done: 0, total: pending.length };
+    triageRun = { done: 0, failed: [], total: pending.length, started: Date.now() };
+    const MAX_FAILS = 3;
+    const timer = setInterval(requestRender, 1000);
     render();
-    let error = null;
     let changed = 0;
+    let streak = 0;
+    let stopped = null;
     const counts = {};
     for (const [n, item] of pending.entries()) {
         // Pausa entre consultas para no pasar el límite por minuto del nivel gratuito.
         if (n) await new Promise(r => setTimeout(r, TRIAGE.DELAY_MS));
         try {
             const before = (ideaData(getItem(item.id) || item).ai_filter || {}).verdict;
-            const after = (await evaluateIdea(item)).ai_filter.verdict;
+            // Sin reintento propio: la siguiente idea ya sirve de reintento.
+            const after = (await evaluateIdea(item, { retry: false })).ai_filter.verdict;
             if (before && before !== after) changed++;
             counts[after] = (counts[after] || 0) + 1;
-            triageRun.done++;
+            streak = 0;
         } catch (e) {
-            error = e;
-            break;
+            triageRun.failed.push(item.id);
+            streak++;
+            if (e instanceof AuthError || e.status === 401 || streak >= MAX_FAILS) {
+                stopped = e;
+                triageRun.done++;
+                break;
+            }
         }
+        triageRun.done++;
         requestRender();
     }
-    const { done, total } = triageRun;
+    clearInterval(timer);
+    const { done, total, failed, started } = triageRun;
+    const ok = done - failed.length;
     triageRun = null;
     requestRender();
-    if (error) showToast(`❌ ${error.message} (${done} de ${total} evaluadas; esas quedan guardadas)`, 'error', 9000);
-    else {
-        const summary = TRIAGE.VERDICTS.filter(v => counts[v.id]).map(v => `${counts[v.id]} ${v.label}`).join(', ');
-        showToast(`✓ Evaluación lista (${clockTime(new Date().toISOString())}): ${total} idea(s) · ${summary}${changed ? ` · ${changed} cambiaron de veredicto` : ''}`, 'success', 7000);
+    const summary = TRIAGE.VERDICTS.filter(v => counts[v.id]).map(v => `${counts[v.id]} ${v.label}`).join(', ');
+    const took = formatDuration(Date.now() - started);
+    if (stopped) {
+        showToast(`❌ Se detuvo tras ${streak} fallo(s) seguidos: ${stopped.message.replace(/\.$/, '')}. Evaluadas ${ok} de ${total} en ${took}${summary ? ` (${summary})` : ''}; vuelve a apretar para seguir con las que faltan.`, 'error', 12000);
+    } else if (failed.length) {
+        showToast(`⚠ Evaluación lista en ${took}: ${ok} de ${total} idea(s)${summary ? ` · ${summary}` : ''}. Fallaron ${failed.join(', ')}: vuelve a apretar para reintentarlas.`, 'warning', 12000);
+    } else {
+        showToast(`✓ Evaluación lista (${clockTime(new Date().toISOString())}) en ${took}: ${total} idea(s) · ${summary}${changed ? ` · ${changed} cambiaron de veredicto` : ''}`, 'success', 9000);
     }
+}
+
+// --- Modo de prueba (?prueba en la URL): 20 ideas de ejemplo para medir el lote ---
+
+const TEST_PREFIX = '[PRUEBA]';
+const TEST_IDEAS = [
+    ['Huerto vertical hexagonal automatizado para departamentos', 'Familias en departamentos sin patio en Santiago', 'Lo compran las familias; kit a 60 mil pesos'],
+    ['Plataforma para mejorar la sociedad', 'La sociedad', ''],
+    ['Sensor de humedad para riego de plazas municipales', 'Municipios con áreas verdes en zonas de sequía', 'Lo paga el municipio con fondos de áreas verdes'],
+    ['App de rutas accesibles para personas en silla de ruedas', 'Usuarios de silla de ruedas en el centro de Santiago', ''],
+    ['Compostera comunitaria con medición de residuos', 'Juntas de vecinos de comunas con alto volumen de basura', 'Fondo concursable municipal de reciclaje'],
+    ['Algo con inteligencia artificial', 'Todos', ''],
+    ['Filtro de agua de bajo costo para escuelas rurales', 'Escuelas rurales sin agua potable en la región de Coquimbo', 'Financia el Ministerio de Educación vía programa de infraestructura'],
+    ['Pulsera que avisa caídas de adultos mayores que viven solos', 'Adultos mayores que viven solos', 'La pagan los hijos con suscripción mensual'],
+    ['Marketplace de ropa usada entre universitarios', 'Estudiantes universitarios de Santiago', 'Comisión del 10% por venta'],
+    ['Sistema nacional de salud digital integrado para todo Chile', 'Todos los chilenos', 'El Estado'],
+    ['Paneles solares plegables para ferias libres', 'Feriantes de ferias libres sin conexión eléctrica', ''],
+    ['Bot que traduce trámites municipales a lenguaje simple', 'Migrantes que hacen trámites en municipalidades', 'Lo contrata la municipalidad'],
+    ['Maceta inteligente', '', ''],
+    ['Biofiltro de aguas grises para viviendas sociales', 'Familias de viviendas sociales con escasez hídrica', 'Subsidio habitacional del MINVU'],
+    ['Red de bicicletas compartidas eléctricas en campus', 'Estudiantes y funcionarios de la UDLA', 'La universidad paga y cobra una tarifa baja'],
+    ['Juego educativo sobre reciclaje para niños', 'Niños de 6 a 10 años de colegios municipales', ''],
+    ['Detector de fugas de gas para cocinas de casas antiguas', 'Familias en casas con instalaciones de gas antiguas', 'Venta directa a 25 mil pesos'],
+    ['Plataforma de voluntariado', 'Personas que quieren ayudar', ''],
+    ['Techo verde modular para paraderos de micro', 'Usuarios de paraderos expuestos al calor en verano', 'Concesión de publicidad en el paradero'],
+    ['Mapa colaborativo de puntos de agua potable gratis', 'Ciclistas y deportistas urbanos', 'Patrocinio de marcas deportivas']
+];
+
+function testMode() {
+    return /[?&]prueba\b/.test(location.search);
+}
+
+async function createTestIdeas() {
+    for (const [i, [title, beneficiary, notes]] of TEST_IDEAS.entries()) {
+        const data = { ...blankIdeaData(), title, name: `${TEST_PREFIX} ${i + 1}`, theme: L.THEMES[i % L.THEMES.length].id, beneficiary, notes };
+        await saveItem(makeItem(nextIdeaId(), 'idea', data, nextPosition('idea')), { rerender: false });
+    }
+    render();
+    showToast(`✓ ${TEST_IDEAS.length} ideas de prueba creadas en el Banco`);
+}
+
+async function deleteTestIdeas() {
+    const list = ideas().filter(i => String(i.data.name || '').startsWith(TEST_PREFIX));
+    if (!list.length || !confirm(`¿Eliminar las ${list.length} ideas de prueba?`)) return;
+    for (const item of list) await deleteItem(item.id);
+    showToast(`${list.length} ideas de prueba eliminadas`);
 }
 
 // Banco → Filtro: todas las ideas que ya tienen idea, tema y beneficiario.
@@ -340,6 +409,8 @@ function triageBar(all) {
                     <span class="form-hint">Anoten todo sin evaluar: idea, tema y beneficiario. Al terminar, mándenlas al Filtro rápido, donde Gemini hace el primer descarte.${waiting ? ` ${waiting} idea(s) aún sin tema o beneficiario.` : ''}</span>
                 </div>
                 <div class="ai-actions">
+                    ${testMode() ? `<button class="btn btn-ghost" data-action="test-create">+ 20 ideas de prueba</button>
+                        <button class="btn btn-ghost danger" data-action="test-delete">Borrar ideas de prueba</button>` : ''}
                     <button class="btn btn-accent" data-action="send-to-filter" ${sendable ? '' : 'disabled'}>Mandar ${sendable} al Filtro →</button>
                 </div>
             </div>`;
@@ -349,7 +420,12 @@ function triageBar(all) {
     const pending = inFilter.filter(x => needsTriage(x.data)).length;
     const counts = TRIAGE.VERDICTS.map(v => chip({ ...v, label: `${v.label}: ${inFilter.filter(x => x.data.ai_filter && x.data.ai_filter.verdict === v.id).length}` }));
     const rejected = rejectedIdeas().length;
-    const label = triageRun ? `Evaluando ${Math.min(triageRun.done + 1, triageRun.total)} de ${triageRun.total}…` : `🤖 Evaluar con Gemini (${pending})`;
+    let label = `🤖 Evaluar con Gemini (${pending})`;
+    if (triageRun) {
+        const elapsed = Date.now() - triageRun.started;
+        const left = triageRun.done ? (elapsed / triageRun.done) * (triageRun.total - triageRun.done) : 0;
+        label = `Evaluando ${Math.min(triageRun.done + 1, triageRun.total)} de ${triageRun.total} · ${formatDuration(elapsed)}${left ? ` · faltan ~${formatDuration(left)}` : ''}`;
+    }
     return `
         <div class="ai-bar">
             <div class="ai-bar-text">
@@ -1194,7 +1270,9 @@ registerView({
         },
         'ai-triage': () => runTriage(),
         'ai-discard': () => discardRejected(),
-        'send-to-filter': () => sendToFilter()
+        'send-to-filter': () => sendToFilter(),
+        'test-create': () => createTestIdeas(),
+        'test-delete': () => deleteTestIdeas()
     }
 });
 

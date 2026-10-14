@@ -73,6 +73,14 @@ capas → **Benchmark** solo con las que pasan.
 Las preguntas de Gemini, sus reglas, qué campo llenan y el motivo de descarte se editan en `AI_TRIAGE`
 dentro de `js/lineamientos.js`.
 
+La evaluación en lote sigue aunque una idea falle (se reintenta al volver a apretar) y se detiene tras
+3 fallos seguidos. El botón muestra el avance, el tiempo y una estimación de lo que falta. Con Google
+normal, 20 ideas toman ~3 min; con Google saturado, ~10 min.
+
+**Modo de prueba:** abre la página con `?prueba` al final de la dirección
+(`…/Rally-de-innovacion/?prueba`). En *Banco* aparecen *+ 20 ideas de prueba* (marcadas `[PRUEBA]` en el
+nombre, algunas vagas a propósito) y *Borrar ideas de prueba*, para medir el lote con Gemini real.
+
 La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 `supabase/functions/filtrar-idea`, que solo responde a usuarios con sesión.
 
