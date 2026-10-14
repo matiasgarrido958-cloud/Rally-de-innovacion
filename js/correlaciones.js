@@ -73,7 +73,12 @@ async function findCorrelations(selection) {
         showToast(n ? `🔗 ${n} correlación(es) encontradas: revísalas y crea las que sirvan` : '🔗 Gemini no encontró correlaciones claras', n ? 'success' : 'warning', 6000);
     } catch (e) {
         correlation = null;
-        showToast(`❌ ${e.message}`, 'error', 8000);
+        // La función desplegada es anterior a las correlaciones: no conoce el modo y
+        // responde como si fuera el filtro sin preguntas.
+        const outdated = /Faltan la idea o las preguntas/.test(e.message);
+        showToast(outdated
+            ? '❌ La función de Gemini en Supabase es la versión anterior y no sabe correlacionar. Pega de nuevo supabase/functions/filtrar-idea/index.ts en Supabase (Edge Functions) y despliega.'
+            : `❌ ${e.message}`, 'error', outdated ? 15000 : 8000);
     } finally {
         clearInterval(timer);
         requestRender();
