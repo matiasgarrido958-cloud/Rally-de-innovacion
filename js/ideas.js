@@ -229,7 +229,8 @@ async function callTriage(body) {
             return await supabaseFunction(TRIAGE.FUNCTION, body);
         } catch (error) {
             if (attempt >= delays.length || !isTransient(error)) throw error;
-            showToast(`⏳ Gemini está saturado: reintento en ${Math.round(delays[attempt] / 1000)} s…`, 'warning', delays[attempt]);
+            const detail = (error.message.match(/\(([^()]*:\s*\d{3}[^()]*)\)/) || [])[1];
+            showToast(`⏳ Gemini está saturado${detail ? ` (${detail})` : ''}: reintento ${attempt + 1} de ${delays.length} en ${Math.round(delays[attempt] / 1000)} s…`, 'warning', delays[attempt]);
             await new Promise(r => setTimeout(r, delays[attempt]));
         }
     }
