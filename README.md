@@ -106,6 +106,35 @@ Para usar cuentas individuales, deja `TEAM_EMAIL: ''` y la página pedirá corre
 Las políticas RLS solo permiten leer y escribir a usuarios con sesión, así que sin sesión la API no
 entrega nada aunque alguien tenga la publishable key.
 
+## Evaluación con IA
+
+En la ventana de cada idea, la sección **Evaluación con IA** envía la idea (campos con contenido y
+hallazgos de validación) a un modelo de IA, que devuelve una matriz con puntaje 1–5, justificación y
+qué mejorar para cada criterio del jurado y de la matriz de integración de IA, más fortalezas, mejoras
+prioritarias y un veredicto (fuerte / prometedora / débil). La evaluación se guarda en la idea, la
+tarjeta muestra el promedio como chip 🤖 y se avisa si la idea cambió después de evaluarla. El botón
+*Copiar puntajes de la IA a la ficha* llena los puntajes del equipo para revisarlos; nada se copia solo
+ni bloquea etapas. Cada evaluación trae la cita APA sugerida para el campo (k).
+
+La clave del modelo nunca va en el navegador: la llamada pasa por la Edge Function
+`supabase/functions/evaluar-idea`, que solo responde a usuarios con sesión. Funciona con Gemini,
+OpenAI (ChatGPT) o Anthropic (Claude).
+
+1. Saca una API key del proveedor elegido (Google AI Studio, OpenAI Platform o Anthropic Console).
+2. Despliega la función, con la [CLI de Supabase](https://supabase.com/docs/guides/functions):
+   ```bash
+   supabase login
+   supabase link --project-ref dmaxljbdvctiwldibvll
+   supabase functions deploy evaluar-idea
+   supabase secrets set AI_PROVIDER=gemini AI_API_KEY=tu-clave
+   ```
+   o desde el panel: **Edge Functions → Deploy a new function → Via Editor**, con el nombre
+   `evaluar-idea` y el contenido de `index.ts`; los secrets van en **Edge Functions → Secrets**.
+3. Opcional: `AI_MODEL` para elegir otro modelo del proveedor (por defecto `gemini-2.5-flash`,
+   `gpt-4o-mini` o `claude-haiku-5-5`).
+
+En modo local la sección aparece pero el botón queda deshabilitado.
+
 ## Publicar en GitHub Pages
 
 1. En GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch**.

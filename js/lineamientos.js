@@ -27,14 +27,32 @@ window.LINEAMIENTOS = {
         { id: 'reporte', label: '¿Se puede estructurar en el reporte pautado dentro del plazo?' }
     ],
 
-    // Criterios del jurado (checklist de entrega): se puntúan 1–5 en la validación.
+    // Criterios de evaluación del jurado (bases 2026, sección 12): se puntúan 1–5 en la
+    // validación y los usa la evaluación con IA. hint orienta a la IA y al equipo.
     CRITERIA: [
-        { id: 'innovacion', label: 'Innovación' },
-        { id: 'impacto', label: 'Impacto social y ambiental' },
-        { id: 'prefactibilidad', label: 'Prefactibilidad y sustentabilidad' },
-        { id: 'viabilidad', label: 'Viabilidad técnica' },
-        { id: 'presentacion', label: 'Potencial de presentación' }
+        { id: 'innovacion', label: 'Grado de innovación de la solución', hint: 'Qué tan nueva es frente a las alternativas existentes.' },
+        { id: 'impacto', label: 'Impacto positivo en la sociedad', hint: 'Beneficio concreto y medible para el beneficiario directo y la comunidad.' },
+        { id: 'prefactibilidad', label: 'Prefactibilidad económica y social, y sustentabilidad ambiental', hint: 'Quién paga, costos, aceptación social y efecto ambiental en el tiempo.' },
+        { id: 'viabilidad', label: 'Viabilidad técnica', hint: 'Si se puede construir con tecnología y recursos disponibles; qué tan prototipable es.' },
+        { id: 'presentacion', label: 'Calidad de la presentación', hint: 'Claridad del problema, la solución y la evidencia para un video de 2 minutos y el reporte.' }
     ],
+
+    // Evaluación con IA (Edge Function supabase/functions/evaluar-idea). Es una opinión
+    // de apoyo: no bloquea etapas ni cambia puntajes sin que el equipo lo pida.
+    // apa: datos para la cita sugerida según el proveedor configurado en Supabase.
+    AI_REVIEW: {
+        FUNCTION: 'evaluar-idea',
+        APA: {
+            gemini: { author: 'Google', name: 'Gemini', url: 'https://gemini.google.com' },
+            openai: { author: 'OpenAI', name: 'ChatGPT', url: 'https://chatgpt.com' },
+            anthropic: { author: 'Anthropic', name: 'Claude', url: 'https://claude.ai' }
+        },
+        VERDICTS: [
+            { id: 'fuerte', label: 'Fuerte', color: 'var(--k-good)' },
+            { id: 'prometedora', label: 'Prometedora', color: 'var(--k-s4)' },
+            { id: 'debil', label: 'Débil', color: 'var(--k-bad)' }
+        ]
+    },
 
     // Matriz de integración de IA (ficha de la idea): cada criterio se puntúa 1–5.
     // Es solo de evaluación: no bloquea el avance de etapas.
