@@ -1,10 +1,14 @@
-// Banco de ideas → Filtro rápido → Ficha → Validación → Elegida (secciones 3 y 5).
+// Banco de ideas → Filtro rápido → Benchmark → Ficha → Validación → Elegida.
+// Fase 1 (filtro): tipo de propuesta, semáforo de factibilidad en WORK_HOURS y
+// preguntas del filtro. Fase 2 (benchmark): qué se hace en el mundo, investigado
+// por el equipo con sus propias fuentes e IA.
 // Igual que el flujo de Fast Check: cada idea avanza de a una etapa cumpliendo
 // requisitos; retroceder siempre se puede; descartar guarda el motivo.
 
 const IDEA_STAGES = [
     { id: 'banco', label: 'Banco de ideas', color: 'var(--k-s1)', hint: 'Cada idea nueva entra con un ID: una línea, tema y beneficiario directo.' },
-    { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: 'Cuatro preguntas. Si falla alguna, la idea se descarta.' },
+    { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: `Fase 1: producto o servicio, semáforo de factibilidad en ${L.WORK_HOURS} h de trabajo y cuatro preguntas. Si falla, se descarta.` },
+    { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Fase 2: qué se está haciendo en el mundo. El equipo investiga (con IA y fuentes propias) y decide si la idea tiene diferenciación.' },
     { id: 'ficha', label: 'Ficha de idea', color: 'var(--k-s3)', hint: 'Ficha a–k para cada idea que sigue viva.' },
     { id: 'validacion', label: 'Validación', color: 'var(--k-s4)', hint: 'Entrevista, encuesta corta o mentor, y puntaje 1–5 según los criterios del jurado.' },
     { id: 'elegida', label: 'Elegida', color: 'var(--k-s5)', hint: 'La idea con la que el equipo va al reporte y al pitch.' }
@@ -46,7 +50,8 @@ function ideas() {
 
 function blankIdeaData() {
     const data = { title: '', name: '', theme: '', beneficiary: '', owner: '', notes: '', status: 'banco',
-        filter: {}, validations: [], scores: {}, discard_reason: '', discarded_from: '' };
+        filter: {}, feasibility: {}, offering: '', benchmark: { refs: [], trend: '', differentiation: '', notes: '', verdict: '' },
+        plan_done: {}, validations: [], scores: {}, discard_reason: '', discarded_from: '' };
     FICHA_FLAT.forEach(f => { data[f.id] = ''; });
     return data;
 }
@@ -56,6 +61,10 @@ function ideaData(item) {
     if (!Array.isArray(data.validations)) data.validations = [];
     if (typeof data.filter !== 'object' || !data.filter) data.filter = {};
     if (typeof data.scores !== 'object' || !data.scores) data.scores = {};
+    if (typeof data.feasibility !== 'object' || !data.feasibility) data.feasibility = {};
+    if (typeof data.plan_done !== 'object' || !data.plan_done) data.plan_done = {};
+    data.benchmark = { ...blankIdeaData().benchmark, ...(data.benchmark || {}) };
+    if (!Array.isArray(data.benchmark.refs)) data.benchmark.refs = [];
     return data;
 }
 
@@ -79,6 +88,35 @@ function filterFailures(data) {
     return L.QUICK_FILTER.filter(q => data.filter[q.id] === 'no');
 }
 
+// Semáforo de factibilidad: { points, max, answered, level: 'verde'|'amarillo'|'rojo'|null }.
+const FEASIBILITY_VALUES = { si: 2, medio: 1, no: 0 };
+const FEASIBILITY_LEVELS = {
+    verde: { id: 'verde', label: 'Verde', color: 'var(--k-good)' },
+    amarillo: { id: 'amarillo', label: 'Amarillo', color: 'var(--k-s4)' },
+    rojo: { id: 'rojo', label: 'Rojo', color: 'var(--k-bad)' }
+};
+
+function feasibility(data) {
+    const answers = L.FEASIBILITY.map(q => data.feasibility[q.id]).filter(v => v in FEASIBILITY_VALUES);
+    const points = answers.reduce((sum, v) => sum + FEASIBILITY_VALUES[v], 0);
+    const answered = answers.length;
+    let level = null;
+    if (answered === L.FEASIBILITY.length) {
+        level = points >= L.FEASIBILITY_GREEN ? 'verde' : points >= L.FEASIBILITY_YELLOW ? 'amarillo' : 'rojo';
+    }
+    return { points, max: L.FEASIBILITY.length * 2, answered, level };
+}
+
+// Plan de trabajo según el tipo (mixto = producto + servicio).
+function workPlan(offering) {
+    if (offering === 'mixto') return [...L.WORK_PLANS.producto, ...L.WORK_PLANS.servicio];
+    return L.WORK_PLANS[offering] || [];
+}
+
+function benchmarkRefsDone(data) {
+    return data.benchmark.refs.filter(r => String(r.name || '').trim() && String(r.difference || '').trim()).length;
+}
+
 function ideaRequirements(data, target) {
     const missing = [];
     const empty = v => !String(v || '').trim();
@@ -88,11 +126,26 @@ function ideaRequirements(data, target) {
             if (!data.theme) missing.push('Elige el tema.');
             if (empty(data.beneficiary)) missing.push('Indica el beneficiario directo.');
             break;
-        case 'ficha': {
+        case 'benchmark': {
+            if (!data.offering) missing.push('Indica si es producto, servicio o ambos.');
+            const f = feasibility(data);
+            if (f.answered < L.FEASIBILITY.length) missing.push(`Responde el semáforo de factibilidad (faltan ${L.FEASIBILITY.length - f.answered}).`);
+            else if (f.level === 'rojo') missing.push(`Semáforo rojo (${f.points}/${f.max}): no alcanza en ${L.WORK_HOURS} h. Ajústala o descártala.`);
             const unanswered = L.QUICK_FILTER.filter(q => !data.filter[q.id]).length;
             if (unanswered) missing.push(`Responde el filtro rápido (faltan ${unanswered}).`);
             const failed = filterFailures(data);
             if (failed.length) missing.push(`Falla el filtro (${failed.length}): descártala con el motivo correspondiente.`);
+            break;
+        }
+        case 'ficha': {
+            const refs = benchmarkRefsDone(data);
+            if (refs < L.BENCHMARK_MIN_REFS) missing.push(`Registra al menos ${L.BENCHMARK_MIN_REFS} referentes con nombre y diferencia (hay ${refs}).`);
+            if (empty(data.benchmark.differentiation)) missing.push('Escribe qué diferencia a nuestra idea de lo que existe.');
+            if (data.benchmark.verdict !== 'seguir') {
+                missing.push(data.benchmark.verdict === 'descartar' ? 'El benchmark dice descartar: descártala.'
+                    : data.benchmark.verdict === 'pivotar' ? 'El benchmark dice ajustar la idea: ajústala y vuelve a decidir.'
+                    : 'Decide con el benchmark: seguir, ajustar o descartar.');
+            }
             break;
         }
         case 'validacion':
@@ -113,10 +166,11 @@ function ideaWarnings(item, data) {
     const warnings = [];
     const stage = ideaStageIndex(data.status);
     if (data.theme === 'reciclaje') warnings.push('Reciclaje: ya ganaron Hojabeta y The Last Resort. ¿Cuál es nuestro ángulo distinto?');
-    if (stage >= 2 && !String(data.k_fuentes || '').trim()) warnings.push('Sin fuentes APA todavía (k): el reporte las exige, incluidas las de IA.');
-    if (stage >= 2 && !String(data.i_riesgos || '').trim()) warnings.push('Sin riesgos ni supuestos anotados (i).');
+    const ficha = ideaStageIndex('ficha');
+    if (stage >= ficha && !String(data.k_fuentes || '').trim()) warnings.push('Sin fuentes APA todavía (k): el reporte las exige, incluidas las de IA.');
+    if (stage >= ficha && !String(data.i_riesgos || '').trim()) warnings.push('Sin riesgos ni supuestos anotados (i).');
     const otherChosen = ideas().filter(i => i.id !== item.id && i.data.status === 'elegida');
-    if (otherChosen.length && stage >= 3) warnings.push(`Ya hay otra idea elegida: ${otherChosen.map(i => i.id).join(', ')}.`);
+    if (otherChosen.length && stage >= ideaStageIndex('validacion')) warnings.push(`Ya hay otra idea elegida: ${otherChosen.map(i => i.id).join(', ')}.`);
     return warnings;
 }
 
@@ -127,6 +181,8 @@ function ideaCard(item) {
     const stage = findOption(IDEA_ALL, data.status);
     const theme = findOption(L.THEMES, data.theme);
     const score = ideaScore(data);
+    const f = feasibility(data);
+    const offering = data.offering ? findOption(L.OFFERING_TYPES, data.offering) : null;
     let progress = '';
     if (data.status === 'descartada') {
         progress = `<div class="card-progress muted">Motivo: ${escapeHtml(data.discard_reason || 'sin motivo')}</div>`;
@@ -148,6 +204,8 @@ function ideaCard(item) {
             ${data.name && data.title ? `<div class="card-sub">${escapeHtml(data.title)}</div>` : ''}
             <div class="card-tags">
                 ${data.theme ? chip(theme) : ''}
+                ${offering ? `<span class="chip" style="--c:${offering.color}" title="${escapeHtml(offering.hint)}">${offering.icon} ${escapeHtml(offering.label)}</span>` : ''}
+                ${f.level ? `<span class="chip" style="--c:${FEASIBILITY_LEVELS[f.level].color}" title="Semáforo de factibilidad en ${L.WORK_HOURS} h">● ${FEASIBILITY_LEVELS[f.level].label} ${f.points}/${f.max}</span>` : ''}
                 ${data.beneficiary ? `<span class="chip outline" title="Beneficiario directo">👥 ${escapeHtml(data.beneficiary)}</span>` : ''}
             </div>
             ${progress}
@@ -163,6 +221,9 @@ function renderIdeasView() {
     const q = ideaSearch;
     const filtered = all.filter(({ item, data }) => data.status === ideaTab &&
         (!q || `${item.id} ${data.title} ${data.name} ${data.beneficiary} ${data.owner} ${findOption(L.THEMES, data.theme).label}`.toLowerCase().includes(q)));
+    if (ideaTab === 'filtro' || ideaTab === 'benchmark') {
+        filtered.sort((a, b) => feasibility(b.data).points - feasibility(a.data).points);
+    }
     if (ideaTab === 'validacion' || ideaTab === 'elegida') {
         filtered.sort((a, b) => (ideaScore(b.data) ?? -1) - (ideaScore(a.data) ?? -1));
     }
@@ -223,8 +284,8 @@ function pills(path, options, selected) {
         </label>`).join('')}</div>`;
 }
 
-function fold(title, open, body, done = false) {
-    return `<details class="fold" ${open ? 'open' : ''}><summary class="section-title">${escapeHtml(title)}${done ? ' <span class="fold-done">✓</span>' : ''}</summary><div class="section">${body}</div></details>`;
+function fold(title, open, body, done = false, key = '') {
+    return `<details class="fold" ${key ? `data-fold="${key}"` : ''} ${open ? 'open' : ''}><summary class="section-title">${escapeHtml(title)}${done ? ' <span class="fold-done">✓</span>' : ''}</summary><div class="section">${body}</div></details>`;
 }
 
 function sectionIdea(d, open) {
@@ -237,26 +298,159 @@ function sectionIdea(d, open) {
         <div class="form-group"><label class="form-label">Tema <span class="req-star">*</span></label>${pills('theme', L.THEMES, d.theme)}</div>
         ${field('beneficiary', 'Beneficiario directo', d.beneficiary, { required: true, placeholder: 'Quién, específicamente' })}
         ${field('notes', 'Notas / desafío, ONG o empresa', d.notes, { textarea: true })}
-    `, ideaRequirements(d, 'filtro').length === 0);
+    `, ideaRequirements(d, 'filtro').length === 0, 'idea');
 }
 
 function sectionFilter(d, open) {
     const yesNo = [{ id: 'si', label: 'Sí', color: 'var(--k-good)' }, { id: 'no', label: 'No', color: 'var(--k-bad)' }];
-    return fold('2 · Filtro rápido', open, `
-        <p class="form-hint">Descartar si falla alguno.</p>
-        ${L.QUICK_FILTER.map(q => `
-            <div class="filter-row">
-                <span>${escapeHtml(q.label)}</span>
-                ${pills(`filter.${q.id}`, yesNo, d.filter[q.id])}
-            </div>`).join('')}
-    `, ideaRequirements(d, 'ficha').length === 0);
+    const triple = [{ id: 'si', label: 'Sí', color: 'var(--k-good)' }, { id: 'medio', label: 'A medias', color: 'var(--k-s4)' }, { id: 'no', label: 'No', color: 'var(--k-bad)' }];
+    const offerings = L.OFFERING_TYPES.map(o => ({ ...o, label: `${o.icon} ${o.label}` }));
+    const offering = d.offering ? findOption(L.OFFERING_TYPES, d.offering) : null;
+    return fold('2 · Filtro rápido (fase 1)', open, `
+        <div class="form-group"><label class="form-label">¿Es producto o servicio? <span class="req-star">*</span></label>
+            ${pills('offering', offerings, d.offering)}
+            <p class="form-hint" id="offeringHint">${offering ? escapeHtml(offering.hint) : 'Define el plan de trabajo: maqueta 3D si es producto, análisis financiero si es servicio.'}</p>
+        </div>
+        <div class="subgroup">
+            <div class="subgroup-title">Semáforo de factibilidad en ${L.WORK_HOURS} h de trabajo <span id="feasBadge">${feasibilityBadge(d)}</span></div>
+            ${L.FEASIBILITY.map(q => `
+                <div class="filter-row">
+                    <span>${escapeHtml(q.label)}</span>
+                    ${pills(`feasibility.${q.id}`, triple, d.feasibility[q.id])}
+                </div>`).join('')}
+        </div>
+        <div class="subgroup">
+            <div class="subgroup-title">Filtro de las bases</div>
+            <p class="form-hint">Descartar si falla alguno.</p>
+            ${L.QUICK_FILTER.map(q => `
+                <div class="filter-row">
+                    <span>${escapeHtml(q.label)}</span>
+                    ${pills(`filter.${q.id}`, yesNo, d.filter[q.id])}
+                </div>`).join('')}
+        </div>
+    `, ideaRequirements(d, 'benchmark').length === 0, 'filtro');
+}
+
+function feasibilityBadge(d) {
+    const f = feasibility(d);
+    if (!f.level) return `<span class="form-hint">${f.answered}/${L.FEASIBILITY.length} respondidas</span>`;
+    return chip({ ...FEASIBILITY_LEVELS[f.level], label: `${FEASIBILITY_LEVELS[f.level].label} · ${f.points}/${f.max}` });
+}
+
+// --- Benchmark (fase 2) ---
+
+function benchmarkPrompt(d) {
+    const offering = d.offering ? findOption(L.OFFERING_TYPES, d.offering).label : 'por definir';
+    const lines = [
+        ['Idea', d.title], ['Nombre', d.name], ['Tema', d.theme ? findOption(L.THEMES, d.theme).label : ''],
+        ['Tipo', offering], ['Beneficiario directo', d.beneficiary], ['Notas / desafío', d.notes]
+    ].filter(([, v]) => String(v || '').trim()).map(([k, v]) => `- ${k}: ${v}`).join('\n');
+    return `Estoy en el Rally Latinoamericano de Innovación (competencia universitaria de ingeniería). Necesito un benchmark de esta idea:
+${lines}
+
+1. Lista 5 soluciones existentes en el mundo parecidas (empresas, startups, proyectos públicos o de investigación). Para cada una: nombre, país, enlace, qué hace y en qué se diferencia de nuestra idea. Prioriza Latinoamérica y Chile si existen.
+2. ¿El tema está en crecimiento, estable o en baja? Justifica con datos o fuentes.
+3. ¿Qué nos podría diferenciar de verdad? Sé crítico: si ya existe algo igual, dilo.
+4. Riesgos principales para implementarla en Chile.
+5. Fuentes en formato APA 7.
+No inventes enlaces ni datos: si no estás seguro, indícalo.`;
+}
+
+function benchmarkRefRow(r, index) {
+    return `
+        <div class="vsrc">
+            <div class="vsrc-head">
+                <span class="vsrc-num">Referente ${index + 1}</span>
+                <button type="button" class="row-remove" data-modal-action="remove-ref" data-index="${index}" aria-label="Quitar">×</button>
+            </div>
+            <div class="row-2">
+                ${field(`benchmark.refs.${index}.name`, 'Nombre', r.name || '', { placeholder: 'Empresa, startup o proyecto', required: true })}
+                ${field(`benchmark.refs.${index}.country`, 'País', r.country || '', { placeholder: 'Chile, México, España…' })}
+            </div>
+            ${field(`benchmark.refs.${index}.url`, 'Enlace', r.url || '', { placeholder: 'https://…' })}
+            ${field(`benchmark.refs.${index}.what`, 'Qué hace', r.what || '', { textarea: true })}
+            ${field(`benchmark.refs.${index}.difference`, 'Diferencia con nuestra idea', r.difference || '', { textarea: true, required: true })}
+        </div>`;
+}
+
+function sectionBenchmark(d, open) {
+    const b = d.benchmark;
+    return fold('3 · Benchmark (fase 2)', open, `
+        <p class="form-hint">Investiguen qué se está haciendo en el mundo: búsqueda propia, Google Scholar, patentes y la IA gratuita que prefieran.
+            Copien el prompt, péguenlo en ChatGPT, Gemini u otra, y <strong>verifiquen cada enlace</strong> antes de registrarlo: las IA inventan referencias.
+            Lo que usen va con cita APA en (k), incluido el uso de IA.</p>
+        <div class="ai-actions">
+            <button type="button" class="btn btn-ghost" data-modal-action="copy-prompt">📋 Copiar prompt para IA</button>
+        </div>
+        <textarea class="form-textarea small prompt-box" id="promptBox" rows="6" readonly hidden></textarea>
+        <div class="rows">${b.refs.map(benchmarkRefRow).join('')}</div>
+        <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-ref"><svg><use href="#i-plus"/></svg>Agregar referente</button>
+        <div class="form-group"><label class="form-label">Tendencia del tema</label>${pills('benchmark.trend', L.BENCHMARK_TRENDS, b.trend)}</div>
+        ${field('benchmark.differentiation', 'Qué nos diferencia de lo que existe', b.differentiation, { textarea: true, required: true, placeholder: 'Precio, público, tecnología, contexto chileno…' })}
+        ${field('benchmark.notes', 'Notas de la investigación', b.notes, { textarea: true, rows: 3, placeholder: 'Hallazgos, cifras, riesgos, fuentes por citar' })}
+        <div class="form-group"><label class="form-label">Decisión <span class="req-star">*</span></label>${pills('benchmark.verdict', L.BENCHMARK_VERDICTS, b.verdict)}</div>
+    `, ideaRequirements(d, 'ficha').length === 0, 'benchmark');
+}
+
+// --- Plan de trabajo según el tipo ---
+
+function sectionPlan(d, open) {
+    const plan = workPlan(d.offering);
+    if (!plan.length) return '';
+    const offering = findOption(L.OFFERING_TYPES, d.offering);
+    const done = plan.filter(p => d.plan_done[p.id]).length;
+    return fold(`Plan de trabajo · ${offering.icon} ${offering.label} (${done}/${plan.length})`, open, `
+        <p class="form-hint">Lo que hay que producir según el tipo de propuesta, dentro de las ${L.WORK_HOURS} h de trabajo. Se puede pasar al tablero de Tareas con responsable y hora.</p>
+        ${plan.map(p => `
+            <label class="plan-item">
+                <input type="checkbox" data-draft="plan_done.${p.id}" ${d.plan_done[p.id] ? 'checked' : ''}>
+                <span><strong>${escapeHtml(p.label)}</strong> <span class="form-hint inline">H${p.hour}</span><span class="form-hint">${escapeHtml(p.hint)}</span></span>
+            </label>`).join('')}
+        <div class="ai-actions">
+            <button type="button" class="btn btn-ghost" data-modal-action="plan-tasks"><svg><use href="#i-plus"/></svg>Agregar al tablero de Tareas</button>
+        </div>
+    `, done === plan.length, 'plan');
+}
+
+async function addPlanTasks() {
+    const plan = workPlan(draft.offering);
+    const note = `Plan de ${currentEditingId}`;
+    const existing = byKind('task').filter(t => t.data.note === note).map(t => t.data.plan_id);
+    const pending = plan.filter(p => !existing.includes(p.id));
+    if (!pending.length) {
+        showToast('Las tareas de este plan ya están en el tablero', 'warning');
+        return;
+    }
+    for (const p of pending) {
+        await saveItem(makeItem(nextTaskId(), 'task', {
+            title: `${currentEditingId} · ${p.label}`, deliverable: p.hint, owner: draft.owner || '',
+            status: 'pendiente', hour: p.hour, note, plan_id: p.id
+        }, nextPosition('task')), { rerender: false });
+    }
+    showToast(`✓ ${pending.length} tarea(s) agregadas al tablero`);
+}
+
+async function copyPrompt() {
+    const text = benchmarkPrompt(draft);
+    const box = document.getElementById('promptBox');
+    box.value = text;
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast('✓ Prompt copiado: pégalo en la IA que prefieran');
+        box.hidden = true;
+    } catch (e) {
+        // Sin acceso al portapapeles: se muestra para copiarlo a mano.
+        box.hidden = false;
+        box.select();
+        showToast('Copia el prompt desde el cuadro', 'warning');
+    }
 }
 
 function sectionFicha(d, open) {
     const render = f => field(f.id, f.label, d[f.id], { textarea: !f.input, rows: f.rows || 2, required: f.required, hint: f.hint || '' });
-    return fold('3 · Ficha de idea', open, FICHA_FIELDS.map(f => f.group
+    return fold('4 · Ficha de idea', open, FICHA_FIELDS.map(f => f.group
         ? `<div class="subgroup"><div class="subgroup-title">${escapeHtml(f.group)}</div>${f.fields.some(x => x.input) ? `<div class="row-2">${f.fields.filter(x => x.input).map(render).join('')}</div>` : ''}${f.fields.filter(x => !x.input).map(render).join('')}</div>`
-        : render(f)).join(''), ideaRequirements(d, 'validacion').length === 0);
+        : render(f)).join(''), ideaRequirements(d, 'validacion').length === 0, 'ficha');
 }
 
 function validationRow(v, index) {
@@ -280,7 +474,7 @@ function validationRow(v, index) {
 
 function sectionValidation(d, open) {
     const score = ideaScore(d);
-    return fold('4 · Validación y puntaje', open, `
+    return fold('5 · Validación y puntaje', open, `
         <div class="rows">${d.validations.map(validationRow).join('')}</div>
         <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-validation"><svg><use href="#i-plus"/></svg>Agregar validación</button>
         <div class="subgroup">
@@ -291,7 +485,7 @@ function sectionValidation(d, open) {
                     ${pills(`scores.${c.id}`, [1, 2, 3, 4, 5].map(n => ({ id: String(n), label: String(n), color: 'var(--k-s4)' })), String(d.scores[c.id] || ''))}
                 </div>`).join('')}
         </div>
-    `, ideaRequirements(d, 'elegida').length === 0);
+    `, ideaRequirements(d, 'elegida').length === 0, 'validacion');
 }
 
 function renderModalBody() {
@@ -299,9 +493,12 @@ function renderModalBody() {
     const stage = Math.max(0, ideaStageIndex(d.status));
     const discarded = d.status === 'descartada';
     const reached = discarded ? Math.max(0, ideaStageIndex(d.discarded_from)) : stage;
-    const sections = [sectionIdea, sectionFilter, sectionFicha, sectionValidation];
+    const sections = [sectionIdea, sectionFilter, sectionBenchmark, sectionFicha, sectionValidation];
     const openIndex = Math.min(reached, sections.length - 1);
     const body = document.getElementById('modalBody');
+    // Al repintar se conservan las secciones abiertas y la posición del scroll.
+    const scroll = body.scrollTop;
+    const openKeys = [...body.querySelectorAll('details[data-fold]')].map(el => [el.dataset.fold, el.open]);
     body.innerHTML = `
         ${discarded ? `<div class="req warn"><strong>Descartada</strong> desde ${escapeHtml(findOption(IDEA_STAGES, d.discarded_from).label)}: ${escapeHtml(d.discard_reason || 'sin motivo')}</div>` : ''}
         <div class="discard-panel" id="discardPanel" hidden>
@@ -317,7 +514,13 @@ function renderModalBody() {
             </div>
         </div>
         <div class="req-box" id="reqBox"></div>
-        ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}`;
+        ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}
+        ${reached >= 1 ? sectionPlan(d, false) : ''}`;
+    openKeys.forEach(([key, open]) => {
+        const el = body.querySelector(`details[data-fold="${key}"]`);
+        if (el) el.open = open;
+    });
+    body.scrollTop = scroll;
     updateRequirementsBox();
 }
 
@@ -333,6 +536,7 @@ function updateRequirementsBox() {
     const failed = filterFailures(draft);
     const warnings = ideaWarnings(item, draft);
     if (failed.length) warnings.unshift(`Falla el filtro rápido: ${failed.map(q => q.label).join(' ')} Descártala.`);
+    if (feasibility(draft).level === 'rojo') warnings.unshift(`Semáforo rojo: con lo que hay no alcanza en ${L.WORK_HOURS} h de trabajo.`);
     box.innerHTML = reqBox(ideaRequirements(draft, next.id), `Lista para pasar a ${next.label}.`, warnings);
     const advance = document.querySelector('[data-modal-action="advance"]');
     if (advance) advance.classList.toggle('ready', ideaRequirements(draft, next.id).length === 0);
@@ -372,6 +576,7 @@ function openIdea(id) {
     currentEditingId = id;
     draft = JSON.parse(JSON.stringify(item ? ideaData(item) : blankIdeaData()));
     hasUnsavedChanges = !item;
+    document.getElementById('modalBody').innerHTML = '';
     renderModalHeader();
     renderModalBody();
     renderModalFooter();
@@ -427,6 +632,16 @@ function handleModalAction(action, el) {
             draft.validations.push({ type: L.VALIDATION_TYPES[0], who: '', finding: '' });
             hasUnsavedChanges = true;
             return renderModalBody();
+        case 'add-ref':
+            draft.benchmark.refs.push({ name: '', country: '', url: '', what: '', difference: '' });
+            hasUnsavedChanges = true;
+            return renderModalBody();
+        case 'remove-ref':
+            draft.benchmark.refs.splice(Number(el.dataset.index), 1);
+            hasUnsavedChanges = true;
+            return renderModalBody();
+        case 'copy-prompt': return copyPrompt();
+        case 'plan-tasks': return addPlanTasks();
         case 'remove-validation':
             draft.validations.splice(Number(el.dataset.index), 1);
             hasUnsavedChanges = true;
@@ -437,7 +652,10 @@ function handleModalAction(action, el) {
             // Si falla el filtro, propone el motivo que corresponde.
             const failed = filterFailures(draft)[0];
             const map = { beneficiario: 0, prototipo: 1, economica: 2, reporte: 3 };
-            if (failed) document.getElementById('discardChoice').selectedIndex = map[failed.id];
+            const choice = document.getElementById('discardChoice');
+            if (failed) choice.selectedIndex = map[failed.id];
+            else if (feasibility(draft).level === 'rojo') choice.selectedIndex = 4;
+            else if (draft.benchmark.verdict === 'descartar') choice.selectedIndex = 5;
             document.getElementById('modalBody').scrollTop = 0;
             return;
         }
@@ -474,9 +692,12 @@ function setupIdeaModal() {
         const el = e.target;
         if (!el.dataset.draft || !draft) return;
         if (el.type === 'radio' && !el.checked) return;
-        setPath(draft, el.dataset.draft, el.value);
+        setPath(draft, el.dataset.draft, el.type === 'checkbox' ? el.checked : el.value);
         hasUnsavedChanges = true;
         if (el.dataset.draft === 'title' || el.dataset.draft === 'name') renderModalHeader();
+        // El tipo cambia el plan de trabajo; las respuestas del semáforo, su resultado.
+        if (el.dataset.draft === 'offering' || el.dataset.draft.startsWith('plan_done.')) return renderModalBody();
+        if (el.dataset.draft.startsWith('feasibility.')) document.getElementById('feasBadge').innerHTML = feasibilityBadge(draft);
         updateRequirementsBox();
     };
     body.addEventListener('input', onEdit);

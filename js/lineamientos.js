@@ -9,6 +9,10 @@ window.LINEAMIENTOS = {
     // Nada se sube después de esta hora; avisar al jurado antes de WARN_H.
     LAST_UPLOAD_H: 27,
     WARN_H: 26,
+    // Margen de trabajo real para construir la idea (prototipo, validación, video y
+    // reporte), descontando descanso, la interacción TikTok y la entrega. Lo usa el
+    // semáforo de factibilidad del filtro.
+    WORK_HOURS: 15,
 
     // Tablero por temas (sección 4).
     THEMES: [
@@ -22,9 +26,58 @@ window.LINEAMIENTOS = {
     // Filtro rápido (sección 3): si falla alguno, la idea se descarta.
     QUICK_FILTER: [
         { id: 'beneficiario', label: '¿Tiene un beneficiario directo y específico?' },
-        { id: 'prototipo', label: '¿Se puede validar y prototipar en el tiempo disponible?' },
+        { id: 'prototipo', label: '¿Se puede validar y prototipar en 15 horas de trabajo?' },
         { id: 'economica', label: '¿Tiene factibilidad económica (quién paga y cuánto cuesta)?' },
         { id: 'reporte', label: '¿Se puede estructurar en el reporte pautado dentro del plazo?' }
+    ],
+
+    // Semáforo de factibilidad (fase 1, filtro): cada pregunta vale Sí = 2, A medias = 1, No = 0.
+    // Verde desde FEASIBILITY_GREEN puntos; rojo bajo FEASIBILITY_YELLOW (no pasa el filtro).
+    FEASIBILITY: [
+        { id: 'saber', label: '¿El equipo sabe construirla con sus conocimientos y herramientas actuales?' },
+        { id: 'validar', label: '¿Hay a quién validarla (beneficiario, mentor, experto) en las primeras horas?' },
+        { id: 'datos', label: '¿Hay datos o cifras públicas para demostrar el impacto?' },
+        { id: 'demo', label: '¿Se puede mostrar algo concreto (maqueta 3D, mockup, flujo) en el video de 2 min?' }
+    ],
+    FEASIBILITY_GREEN: 6,
+    FEASIBILITY_YELLOW: 4,
+
+    // Tipo de propuesta: define el plan de trabajo. hour = hora límite sugerida (H).
+    OFFERING_TYPES: [
+        { id: 'producto', label: 'Producto', icon: '📦', color: 'var(--k-t3)', hint: 'Algo físico o un dispositivo: hay que mostrar una maqueta 3D.' },
+        { id: 'servicio', label: 'Servicio', icon: '🛎️', color: 'var(--k-t1)', hint: 'Una prestación, plataforma o app: hay que demostrar el modelo financiero.' },
+        { id: 'mixto', label: 'Producto + servicio', icon: '🔀', color: 'var(--k-t2)', hint: 'Dispositivo con servicio asociado: se hacen ambos planes.' }
+    ],
+    WORK_PLANS: {
+        producto: [
+            { id: 'p-3d', label: 'Maqueta 3D o render del producto', hint: 'Tinkercad, Fusion 360, SketchUp o Blender. Es la imagen central del video.', hour: 16 },
+            { id: 'p-bom', label: 'Lista de materiales y costo unitario de fabricación', hint: 'Materiales, componentes, cantidades y precios en Chile.', hour: 13 },
+            { id: 'p-fabricacion', label: 'Proceso de fabricación y proveedores', hint: 'Cómo y dónde se produce, a qué escala.', hour: 14 },
+            { id: 'p-precio', label: 'Precio de venta, margen y quién lo compra', hint: 'Comparar con alternativas existentes.', hour: 15 },
+            { id: 'p-prueba', label: 'Prueba de usuario con la maqueta', hint: 'Foto o video mostrando la maqueta a un beneficiario o mentor.', hour: 19 }
+        ],
+        servicio: [
+            { id: 's-flujo', label: 'Flujo del servicio (blueprint)', hint: 'Qué hace el usuario paso a paso y qué pasa detrás.', hour: 12 },
+            { id: 's-ingresos', label: 'Modelo de ingresos', hint: 'Quién paga, cuánto y cada cuánto (suscripción, comisión, municipio, ONG…).', hour: 13 },
+            { id: 's-costos', label: 'Inversión inicial, costos fijos y variables', hint: 'Personal, plataforma, operación y marketing.', hour: 14 },
+            { id: 's-financiero', label: 'Análisis financiero: flujo de caja a 12 meses y punto de equilibrio', hint: 'Con supuestos explícitos; es lo que más pesa en prefactibilidad.', hour: 16 },
+            { id: 's-mockup', label: 'Mockup de la app o de la pantalla del servicio', hint: 'Figma o Canva. Es la imagen central del video.', hour: 18 }
+        ]
+    },
+
+    // Benchmark (fase 2): lo hace el equipo con investigación propia y las IA que
+    // quiera. La página arma el prompt para copiar y registra los referentes.
+    BENCHMARK_MIN_REFS: 2,
+    BENCHMARK_TRENDS: [
+        { id: 'crece', label: 'En crecimiento', color: 'var(--k-good)' },
+        { id: 'estable', label: 'Estable', color: 'var(--k-s4)' },
+        { id: 'decrece', label: 'En baja', color: 'var(--k-bad)' },
+        { id: 'nose', label: 'Sin datos', color: 'var(--k-neutral)' }
+    ],
+    BENCHMARK_VERDICTS: [
+        { id: 'seguir', label: 'Seguir: tiene diferenciación', color: 'var(--k-good)' },
+        { id: 'pivotar', label: 'Ajustar la idea', color: 'var(--k-s4)' },
+        { id: 'descartar', label: 'Descartar: ya existe igual', color: 'var(--k-bad)' }
     ],
 
     // Criterios de evaluación del jurado, textuales de las bases 2026 (sección 12).
@@ -45,6 +98,8 @@ window.LINEAMIENTOS = {
         'No se puede validar ni prototipar a tiempo',
         'Sin factibilidad económica',
         'No cabe en el reporte pautado',
+        'Semáforo rojo: no alcanza en 15 horas de trabajo',
+        'Ya existe en el mundo sin diferenciación clara',
         'Duplicada o combinada con otra idea',
         'Otro'
     ],

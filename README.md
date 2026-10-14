@@ -35,16 +35,23 @@ qué falta). Retroceder siempre se puede.
 | Etapa | Qué se completa | Requisito para avanzar |
 |---|---|---|
 | 1. Banco de ideas | Idea en 1 línea, nombre, tema, beneficiario directo, responsable, notas | Idea, tema y beneficiario |
-| 2. Filtro rápido | Las 4 preguntas del filtro (beneficiario, prototipo a tiempo, factibilidad económica, cabe en el reporte) | Todas en "Sí". Si alguna es "No", hay que descartarla |
-| 3. Ficha de idea | Campos a–k de la ficha | a, b, c, d, e, costo inicial, quién paga, g y h |
-| 4. Validación | Validaciones (entrevista, encuesta, mentor…) con hallazgo y puntaje 1–5 en los criterios del jurado | ≥1 validación con hallazgo y todos los criterios puntuados |
-| 5. Elegida | — | — |
+| 2. Filtro rápido (fase 1) | Producto, servicio o ambos; semáforo de factibilidad en 15 h de trabajo (4 preguntas Sí / A medias / No); las 4 preguntas del filtro de las bases | Tipo elegido, semáforo verde o amarillo y el filtro todo en "Sí". Rojo o un "No": descartarla |
+| 3. Benchmark (fase 2) | Qué se hace en el mundo, investigado por el equipo (fuentes propias e IA gratuita con el prompt que arma la página): referentes con país, enlace y diferencia; tendencia; diferenciación; decisión | ≥2 referentes con nombre y diferencia, diferenciación escrita y decisión "Seguir" |
+| 4. Ficha de idea | Campos a–k de la ficha | a, b, c, d, e, costo inicial, quién paga, g y h |
+| 5. Validación | Validaciones (entrevista, encuesta, mentor…) con hallazgo y puntaje 1–5 en los criterios del jurado | ≥1 validación con hallazgo y todos los criterios puntuados |
+| 6. Elegida | — | — |
+
+Según el tipo, la idea muestra su **plan de trabajo**: maqueta 3D, materiales, fabricación, precio y
+prueba de usuario si es producto; flujo del servicio, modelo de ingresos, costos, análisis financiero
+y mockup si es servicio (ambos si es mixto). Con un botón se pasa al tablero de Tareas con su hora
+sugerida, sin duplicar. Las tarjetas muestran el tipo y el semáforo, y en Filtro y Benchmark se
+ordenan de la más factible a la menos.
 
 Las ideas que no siguen se **descartan** con un motivo (no se borran) y se pueden restaurar. Solo
 desde *Descartadas* se pueden eliminar definitivamente. La página también avisa si una idea es de
 reciclaje (ya ganaron Hojabeta y The Last Resort), si faltan fuentes APA o si hay más de una idea elegida.
 
-Temas, preguntas del filtro, criterios, motivos de descarte, tareas, checklists y bloques del pitch se
+Temas, preguntas del filtro y del semáforo, horas de trabajo (`WORK_HOURS`), planes por tipo, criterios, motivos de descarte, tareas, checklists y bloques del pitch se
 editan en `js/lineamientos.js`.
 
 ## Estructura

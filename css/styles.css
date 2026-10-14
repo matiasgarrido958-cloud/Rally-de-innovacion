@@ -199,7 +199,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .tl-row.parallel .tl-body { padding-left: 10px; border-left: 2px dashed var(--border); }
 
 /* ---------- Etapas de ideas ---------- */
-.pipeline { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; }
+.pipeline { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 12px; }
 .stage { position: relative; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; box-shadow: var(--shadow-sm); overflow: hidden; color: var(--text); }
 .stage::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--stage); opacity: 0.35; }
 .stage:hover { box-shadow: var(--shadow-md); }
@@ -296,6 +296,13 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .score-big { font-size: 18px; color: var(--k-s4); }
 .filter-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .filter-row > span { flex: 1; min-width: 200px; }
+.ai-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
+.prompt-box { font-family: var(--font-mono); font-size: 12px; }
+.plan-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 8px 0; border-top: 1px solid var(--border); cursor: pointer; }
+.plan-item:first-of-type { border-top: 0; }
+.plan-item input { margin-top: 3px; accent-color: var(--k-good); flex-shrink: 0; }
+.plan-item .form-hint:not(.inline) { display: block; margin-top: 2px; }
+.plan-item:has(input:checked) strong { text-decoration: line-through; color: var(--muted); }
 
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill { position: relative; }
@@ -417,7 +424,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     .page-head h1 { font-size: 22px; }
     .page-head-actions, .search, .search input { width: 100%; }
     .page-head-actions .btn-accent { flex: 1; }
-    .pipeline { grid-template-columns: repeat(5, 140px); margin: 0 -16px; padding: 0 16px 4px; }
+    .pipeline { grid-template-columns: repeat(6, 140px); margin: 0 -16px; padding: 0 16px 4px; }
     .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid, .row-2 { grid-template-columns: 1fr; }
     .hero { padding: 18px; }
