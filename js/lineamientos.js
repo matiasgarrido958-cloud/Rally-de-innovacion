@@ -71,7 +71,9 @@ window.LINEAMIENTOS = {
     // help: definición exacta que recibe el modelo (un modelo simple necesita reglas claras).
     // apply: campo del filtro que Gemini llena directamente (marcado con 🤖, editable).
     //   Si el equipo ya lo respondió o lo corrigió, Gemini no lo pisa.
-    // key: un "no" en esta pregunta = No pasa; "sin datos" = Dudosa.
+    // key: un "no" en esta pregunta = No pasa; "sin datos" = Dudosa. Por eso las reglas
+    //   reservan el "no" para casos claros: una idea mal descartada no vuelve.
+    // Al cambiar estas reglas, las ideas evaluadas con las anteriores se reevalúan.
     // discard: motivo con que se descarta si esta pregunta da "no".
     AI_TRIAGE: {
         // Dirección (slug) de la Edge Function en Supabase: la que aparece en su URL
@@ -90,22 +92,22 @@ window.LINEAMIENTOS = {
             { id: 'beneficiario', label: '¿El beneficiario es directo y específico?', apply: 'filter.beneficiario', key: true,
                 discard: 'Sin beneficiario directo y específico',
                 options: ['si', 'no', 'sin_datos'],
-                help: 'si = nombra un grupo concreto de personas u organizaciones (por ejemplo «adultos mayores que viven solos en comunas rurales»); no = es genérico («la sociedad», «las personas», «todos», «el medio ambiente»); sin_datos = no se menciona.' },
+                help: 'si = nombra un grupo concreto de personas u organizaciones, aunque sea amplio (por ejemplo «adultos mayores que viven solos», «juntas de vecinos de comunas con mucha basura»); no = SOLO si es totalmente genérico («la sociedad», «las personas», «todos», «el medio ambiente», «quien quiera»); sin_datos = no se menciona o es ambiguo.' },
             { id: 'problema', label: '¿Se entiende qué problema resuelve?', key: true,
                 discard: 'Otro: no se entiende qué problema resuelve',
                 options: ['si', 'no', 'sin_datos'],
-                help: 'si = se puede decir en una frase qué necesidad o dolor del beneficiario resuelve; no = describe una tecnología o un producto sin un problema claro; sin_datos = la descripción es demasiado corta para saberlo.' },
+                help: 'si = se entiende o se deduce razonablemente qué necesidad resuelve, aunque no esté escrita con esas palabras (por ejemplo, una compostera para comunas con mucha basura resuelve el exceso de residuos; un filtro de agua para escuelas sin agua potable resuelve el acceso a agua segura); no = SOLO si es una tecnología sin ningún problema asociado («algo con inteligencia artificial», «una app») o el problema no tiene relación con el beneficiario; sin_datos = no se puede deducir qué problema resuelve.' },
             { id: 'quien_paga', label: '¿Se identifica quién pagaría?', apply: 'filter.economica', key: true,
                 discard: 'Sin factibilidad económica',
                 options: ['si', 'no', 'sin_datos'],
-                help: 'si = la idea nombra o deja claro un pagador (el usuario, un municipio, una empresa, una ONG, el Estado); no = por su naturaleza nadie la pagaría ni la financiaría; sin_datos = no se menciona y no es evidente.' },
+                help: 'si = la idea nombra o deja claro un pagador (el usuario, un municipio, una empresa, una ONG, el Estado, un fondo concursable); no = SOLO si la idea dice algo que hace imposible financiarla; sin_datos = no se menciona quién paga (no mencionarlo NO es un no).' },
             { id: 'demo', label: '¿Hay algo concreto que mostrar en un video de 2 min?', apply: 'feasibility.demo',
                 options: ['si', 'medio', 'no'],
                 help: 'si = se puede mostrar una maqueta 3D, un mockup de pantalla o un flujo paso a paso; medio = se puede, pero solo con bastante trabajo; no = es un concepto abstracto sin nada visible que mostrar.' },
             { id: 'reporte', label: '¿Cabe en el reporte pautado?', apply: 'filter.reporte', key: true,
                 discard: 'No cabe en el reporte pautado',
-                options: ['si', 'no'],
-                help: 'si = se puede explicar con problema, beneficiario, solución, costos e impacto en un reporte breve; no = es demasiado amplia (un sistema nacional completo, varias soluciones juntas) o demasiado vaga para ese formato.' }
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = es una solución acotada que se puede explicar con problema, beneficiario, solución, costos e impacto en un reporte breve; no = SOLO si es demasiado amplia para ese formato (un sistema nacional completo, varias soluciones distintas juntas); sin_datos = es tan vaga que no se puede saber.' }
         ],
         VERDICTS: [
             { id: 'pasa', label: 'Pasa', color: 'var(--k-good)' },

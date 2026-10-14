@@ -173,8 +173,24 @@ function triageStale(data) {
     return Boolean(data.ai_filter && data.ai_filter.hash !== triageHash(data));
 }
 
+// Huella de las reglas actuales: si cambian, la evaluación anterior queda vieja.
+function rulesHash() {
+    let h = 0;
+    for (const c of JSON.stringify(TRIAGE.QUESTIONS)) h = (h * 31 + c.charCodeAt(0)) | 0;
+    return String(h);
+}
+
+// Motivo por el que una evaluación ya no vale ('' si está al día).
+function triageOutdated(data) {
+    if (!data.ai_filter) return '';
+    if (triageStale(data)) return 'La idea cambió desde la evaluación: vuelve a evaluarla.';
+    if (data.ai_filter.rules !== rulesHash()) return 'Las reglas de la capa IA cambiaron: vuelve a evaluarla.';
+    return '';
+}
+
 function needsTriage(data) {
-    return data.status === 'filtro' && String(data.title || '').trim() && (!data.ai_filter || !data.ai_filter.applied || triageStale(data));
+    return data.status === 'filtro' && String(data.title || '').trim()
+        && (!data.ai_filter || !data.ai_filter.applied || data.ai_filter.rules !== rulesHash() || triageStale(data));
 }
 
 function triageRank(data) {
@@ -186,8 +202,8 @@ function triageChip(data) {
     const f = data.ai_filter;
     if (!f) return '';
     const v = findOption(TRIAGE.VERDICTS, f.verdict);
-    const stale = triageStale(data);
-    return `<span class="chip" style="--c:${v.color}" title="${stale ? 'La idea cambió desde la evaluación: vuelve a evaluarla' : 'Filtro rápido, capa IA'}">🤖 ${escapeHtml(v.label)}${stale ? ' ⟳' : ''}</span>`;
+    const outdated = triageOutdated(data);
+    return `<span class="chip" style="--c:${v.color}" title="${escapeHtml(outdated || 'Filtro rápido, capa IA')}">🤖 ${escapeHtml(v.label)}${outdated ? ' ⟳' : ''}</span>`;
 }
 
 // ¿Este campo del filtro tiene hoy el valor que puso Gemini?
@@ -247,7 +263,7 @@ async function evaluateIdea(item, { retry = true } = {}) {
     const fresh = JSON.parse(JSON.stringify(ideaData(getItem(item.id) || item)));
     fresh.ai_filter = {
         answers, falta: result.falta || '', resumen: result.resumen || '', model: result.model || '',
-        verdict: triageVerdict(answers), hash: triageHash(data), at: new Date().toISOString(), applied: true
+        verdict: triageVerdict(answers), hash: triageHash(data), rules: rulesHash(), at: new Date().toISOString(), applied: true
     };
     applyTriage(fresh, answers);
     await saveItem({ ...(getItem(item.id) || item), data: fresh }, { rerender: false });
@@ -378,7 +394,7 @@ async function sendToFilter() {
 function rejectedIdeas() {
     return ideas().filter(i => {
         const d = ideaData(i);
-        return d.status === 'filtro' && d.ai_filter && d.ai_filter.verdict === 'no_pasa' && !triageStale(d);
+        return d.status === 'filtro' && d.ai_filter && d.ai_filter.verdict === 'no_pasa' && !triageStale(d) && d.ai_filter.rules === rulesHash();
     });
 }
 
@@ -646,7 +662,7 @@ function filterRow(d, path, label, hint = '') {
 
 function sectionFilter(d, open) {
     const f = d.ai_filter;
-    const stale = triageStale(d);
+    const outdated = triageOutdated(d);
     const applied = new Set(TRIAGE.QUESTIONS.filter(q => q.apply).map(q => q.apply));
     // Capa IA: preguntas que Gemini responde (las sin campo, como "problema", solo informan).
     const aiRows = TRIAGE.QUESTIONS.map(q => {
@@ -674,7 +690,7 @@ function sectionFilter(d, open) {
             ${lastEvaluation && lastEvaluation.id === currentEditingId ? `<div class="req ok">${escapeHtml(lastEvaluation.text)}</div>` : ''}
             ${f ? `<p class="form-hint">${escapeHtml(f.resumen)} · Evaluada a las ${escapeHtml(clockTime(f.at))} (${escapeHtml(timeAgo(f.at))}) con ${escapeHtml(f.model)}. Lo marcado con 🤖 lo respondió Gemini: corríjanlo si no corresponde.</p>`
                 : `<p class="form-hint">${LOCAL_MODE ? 'En modo local no hay IA: respondan estas preguntas a mano.' : 'Todavía no se evalúa con Gemini. También se pueden responder a mano.'}</p>`}
-            ${stale ? '<div class="req warn">La idea cambió desde la evaluación: vuelve a evaluarla.</div>' : ''}
+            ${outdated ? `<div class="req warn">${escapeHtml(outdated)}</div>` : ''}
             ${aiRows}
             ${offering ? `<p class="form-hint">${escapeHtml(offering.hint)}</p>` : ''}
             ${f && f.falta ? `<p class="form-hint"><strong>Falta:</strong> ${escapeHtml(f.falta)}</p>` : ''}
