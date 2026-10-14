@@ -27,13 +27,15 @@ window.LINEAMIENTOS = {
         { id: 'reporte', label: '¿Se puede estructurar en el reporte pautado dentro del plazo?' }
     ],
 
-    // Criterios del jurado (checklist de entrega): se puntúan 1–5 en la validación.
+    // Criterios de evaluación del jurado, textuales de las bases 2026 (sección 12).
+    // Se puntúan 1–5 en la validación. La rúbrica detallada la entrega el Comité
+    // Ejecutivo a las sedes; no es pública.
     CRITERIA: [
-        { id: 'innovacion', label: 'Innovación' },
-        { id: 'impacto', label: 'Impacto social y ambiental' },
-        { id: 'prefactibilidad', label: 'Prefactibilidad y sustentabilidad' },
-        { id: 'viabilidad', label: 'Viabilidad técnica' },
-        { id: 'presentacion', label: 'Potencial de presentación' }
+        { id: 'innovacion', label: 'Grado de innovación de la solución propuesta' },
+        { id: 'impacto', label: 'Impacto positivo de la propuesta en la sociedad' },
+        { id: 'prefactibilidad', label: 'Prefactibilidad económica y social, y sustentabilidad ambiental' },
+        { id: 'viabilidad', label: 'Viabilidad técnica de la propuesta' },
+        { id: 'presentacion', label: 'La calidad de la presentación' }
     ],
 
     VALIDATION_TYPES: ['Entrevista', 'Encuesta corta', 'Mentor local', 'Mentor internacional', 'Dato / estudio', 'Otro'],
@@ -90,7 +92,7 @@ window.LINEAMIENTOS = {
         { id: 'T-04', title: 'Validar la solución (entrevista, encuesta corta, mentor)', deliverable: 'Notas de validación', hour: 10 },
         { id: 'T-05', title: 'Modelo económico preliminar', deliverable: 'Tabla de costos e ingresos', hour: 14 },
         { id: 'T-06', title: 'Prototipo / render / flujograma', deliverable: 'Imagen para video y pitch', hour: 18 },
-        { id: 'T-07', title: 'Publicar interacción TikTok (#RallyLatam26, nombre del equipo) y registrar URL', deliverable: 'URL en el sistema', hour: 27, note: 'Antes de H27 (ver emparejamiento)' },
+        { id: 'T-07', title: 'Publicar interacción TikTok (#RallyLatam26 y #RallyLatam2026, nombre de los equipos) y registrar URL', deliverable: 'URL en el sistema', hour: 27, note: 'Antes de H27 (ver emparejamiento)' },
         { id: 'T-08', title: 'Guion del video (2 min máx.) con bloques de tiempo', deliverable: 'Guion', hour: 16 },
         { id: 'T-09', title: 'Grabar y editar video', deliverable: 'Video MP4 ≤ 2 min', hour: 24 },
         { id: 'T-10', title: 'Redactar reporte pautado con citas APA (incluye IA)', deliverable: 'PDF del reporte', hour: 24 },
@@ -140,8 +142,8 @@ window.LINEAMIENTOS = {
             { id: 'ent-desafio', label: 'El desafío elegido está resuelto de manera directa por nuestra idea' },
             { id: 'ent-beneficiarios', label: 'Beneficiarios identificados de forma específica' },
             { id: 'ent-economica', label: 'Propuesta económicamente factible (costos, financiamiento, alternativas)' },
-            { id: 'ent-viable', label: 'Solución técnicamente viable y con impacto social y ambiental positivo' },
-            { id: 'ent-criterios', label: 'Criterios cubiertos: innovación, impacto, prefactibilidad y sustentabilidad, viabilidad técnica, calidad de la presentación' }
+            { id: 'ent-viable', label: 'Solución técnicamente viable, con impacto positivo en la sociedad y sustentable en lo ambiental' },
+            { id: 'ent-criterios', label: 'El reporte aborda los 5 criterios del jurado: grado de innovación, impacto positivo en la sociedad, prefactibilidad económica y social con sustentabilidad ambiental, viabilidad técnica y calidad de la presentación' }
         ] },
         { group: 'Video YouTube', items: [
             { id: 'yt-duracion', label: 'Duración máxima de 2 minutos (medido en el archivo final)' },
@@ -154,7 +156,7 @@ window.LINEAMIENTOS = {
             { id: 'pdf-autoria', label: 'Solución de autoría propia (sin plagio ni abuso de IA, las bases lo penalizan)' }
         ] },
         { group: 'Interacción TikTok', items: [
-            { id: 'tt-duracion', label: 'Video de máximo 1 minuto, con #RallyLatam26 y nombre de los equipos' },
+            { id: 'tt-duracion', label: 'Video de máximo 1 minuto, con #RallyLatam26 y nombre de los equipos (las bases también mencionan #RallyLatam2026: usar ambas)' },
             { id: 'tt-ludica', label: 'Actividad lúdico-creativa entre dos equipos de distinto país o cultura' },
             { id: 'tt-url', label: 'URL del video registrada por ambos líderes en el sistema' }
         ] },
