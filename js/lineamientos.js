@@ -79,8 +79,10 @@ window.LINEAMIENTOS = {
         FUNCTION: 'rapid-action',
         DELAY_MS: 6000,
         // Si Gemini está saturado (503) o se pasa el límite por minuto (429), se reintenta
-        // tras estas esperas antes de dar error.
-        RETRY_DELAYS_MS: [5000, 15000, 30000],
+        // tras estas esperas antes de dar error (la función ya prueba varios modelos).
+        RETRY_DELAYS_MS: [10000],
+        // Tiempo máximo de espera por consulta; después se avisa y se sigue.
+        TIMEOUT_MS: 60000,
         QUESTIONS: [
             { id: 'tipo', label: '¿Producto, servicio o ambos?', apply: 'offering',
                 options: ['producto', 'servicio', 'mixto', 'sin_datos'],

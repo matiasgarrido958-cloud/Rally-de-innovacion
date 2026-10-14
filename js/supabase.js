@@ -125,7 +125,7 @@ function supabaseDelete(table, id) {
 }
 
 // Llama a una Edge Function de Supabase con la sesión del usuario.
-async function supabaseFunction(name, body, retried = false) {
+async function supabaseFunction(name, body, retried = false, timeoutMs = 0) {
     const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG;
     let response;
     try {
@@ -136,16 +136,22 @@ async function supabaseFunction(name, body, retried = false) {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${await getAccessToken()}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined
         });
     } catch (e) {
-        // El navegador no recibió respuesta: la función no existe con ese nombre o se cayó.
         if (e instanceof AuthError) throw e;
+        if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+            const error = new Error(`La función «${name}» no respondió en ${Math.round(timeoutMs / 1000)} s: Gemini está muy lento o saturado. Intenta en unos minutos`);
+            error.status = 408;
+            throw error;
+        }
+        // El navegador no recibió respuesta: la función no existe con ese nombre o se cayó.
         throw new Error(`No se pudo conectar con la función «${name}». Revisa en Supabase → Edge Functions que exista con ese nombre exacto y mira sus Logs`);
     }
     if (response.status === 401 && !retried) {
         await refreshSession();
-        return supabaseFunction(name, body, true);
+        return supabaseFunction(name, body, true, timeoutMs);
     }
     const text = await response.text();
     let data = null;

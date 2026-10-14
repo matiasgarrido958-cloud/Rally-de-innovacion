@@ -18,8 +18,8 @@ const MAX_MODELS_PER_REQUEST = 8;
 // Límites de tiempo: Supabase corta la función si tarda demasiado y el navegador
 // solo ve "no se pudo conectar". Cada modelo tiene MODEL_TIMEOUT_MS y no se prueban
 // modelos nuevos después de TOTAL_BUDGET_MS.
-const MODEL_TIMEOUT_MS = 20000;
-const TOTAL_BUDGET_MS = 60000;
+const MODEL_TIMEOUT_MS = 15000;
+const TOTAL_BUDGET_MS = 35000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 let discovered: { at: number; models: string[] } | null = null;
 

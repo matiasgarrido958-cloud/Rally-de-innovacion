@@ -226,7 +226,7 @@ async function callTriage(body) {
     const delays = TRIAGE.RETRY_DELAYS_MS || [];
     for (let attempt = 0; ; attempt++) {
         try {
-            return await supabaseFunction(TRIAGE.FUNCTION, body);
+            return await supabaseFunction(TRIAGE.FUNCTION, body, false, TRIAGE.TIMEOUT_MS || 0);
         } catch (error) {
             if (attempt >= delays.length || !isTransient(error)) throw error;
             const detail = (error.message.match(/\(([^()]*:\s*\d{3}[^()]*)\)/) || [])[1];
@@ -786,14 +786,25 @@ async function evaluateOpenIdea() {
     // Se evalúa lo guardado: primero se guardan los cambios pendientes.
     if (hasUnsavedChanges || !getItem(currentEditingId)) await persistIdea('');
     showToast('🤖 Evaluando con Gemini…', 'success', 2000);
-    const button = document.querySelector('[data-modal-action="ai-eval"]');
-    if (button) {
+    const started = Date.now();
+    const tick = () => {
+        const button = document.querySelector('[data-modal-action="ai-eval"]');
+        if (!button) return;
         button.disabled = true;
-        button.textContent = '🤖 Evaluando…';
-    }
+        button.textContent = `🤖 Evaluando… ${Math.round((Date.now() - started) / 1000)} s`;
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
     try {
+        const id = currentEditingId;
         const before = draft.ai_filter ? draft.ai_filter.verdict : '';
-        draft = await evaluateIdea(getItem(currentEditingId));
+        const result = await evaluateIdea(getItem(id));
+        // Si cerraron o cambiaron de idea mientras tanto, solo se avisa.
+        if (currentEditingId !== id) {
+            showToast(`✓ ${id} evaluada: ${verdictChange(before, result.ai_filter.verdict)}`, 'success', 6000);
+            return;
+        }
+        draft = result;
         hasUnsavedChanges = false;
         const text = `✓ Evaluación lista a las ${clockTime(draft.ai_filter.at)}: ${verdictChange(before, draft.ai_filter.verdict)} · ${draft.ai_filter.model}`;
         lastEvaluation = { id: currentEditingId, text };
@@ -802,6 +813,8 @@ async function evaluateOpenIdea() {
     } catch (e) {
         showToast(`❌ ${e.message}`, 'error', 8000);
         renderModalBody();
+    } finally {
+        clearInterval(timer);
     }
 }
 
