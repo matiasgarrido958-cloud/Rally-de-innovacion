@@ -296,6 +296,8 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .score-big { font-size: 18px; color: var(--k-s4); }
 .filter-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .filter-row > span { flex: 1; min-width: 200px; }
+.filter-row > span .form-hint { display: block; margin-top: 2px; }
+.filter-row > .chip { flex: 0 0 auto; min-width: 0; }
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
 .ai-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .ai-bar-text { display: flex; flex-direction: column; gap: 4px; min-width: 240px; flex: 1; }

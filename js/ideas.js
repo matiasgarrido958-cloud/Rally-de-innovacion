@@ -6,8 +6,8 @@
 // requisitos; retroceder siempre se puede; descartar guarda el motivo.
 
 const IDEA_STAGES = [
-    { id: 'banco', label: 'Banco de ideas', color: 'var(--k-s1)', hint: 'Cada idea nueva entra con un ID: una línea, tema y beneficiario directo.' },
-    { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: `Fase 1: producto o servicio, semáforo de factibilidad en ${L.WORK_HOURS} h de trabajo y cuatro preguntas. Si falla, se descarta.` },
+    { id: 'banco', label: 'Banco de ideas', color: 'var(--k-s1)', hint: 'Lluvia de ideas: cada idea entra con un ID, una línea, tema y beneficiario directo. Sin evaluar todavía.' },
+    { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: `Fase 1 en dos capas: Gemini responde lo que se deduce del texto y el equipo lo que la IA no puede saber; sale el semáforo en ${L.WORK_HOURS} h. Si falla, se descarta.` },
     { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Fase 2: qué se está haciendo en el mundo. El equipo investiga (con IA y fuentes propias) y decide si la idea tiene diferenciación.' },
     { id: 'ficha', label: 'Ficha de idea', color: 'var(--k-s3)', hint: 'Ficha a–k para cada idea que sigue viva.' },
     { id: 'validacion', label: 'Validación', color: 'var(--k-s4)', hint: 'Entrevista, encuesta corta o mentor, y puntaje 1–5 según los criterios del jurado.' },
@@ -67,6 +67,7 @@ function ideaData(item) {
     if (!Array.isArray(data.benchmark.refs)) data.benchmark.refs = [];
     if (!Array.isArray(data.benchmark.research)) data.benchmark.research = [];
     if (typeof data.ai_filter !== 'object') data.ai_filter = null;
+    if (typeof data.ai_set !== 'object' || !data.ai_set) data.ai_set = {};
     return data;
 }
 
@@ -119,12 +120,13 @@ function benchmarkRefsDone(data) {
     return data.benchmark.refs.filter(r => String(r.name || '').trim() && String(r.difference || '').trim()).length;
 }
 
-// --- Primer filtro con IA (Gemini, Edge Function) ---
-// Gemini responde preguntas cerradas; el veredicto sale de una regla fija:
-// un "no" en una pregunta clave = No pasa; un "sin datos" o un "no" en otra = Dudosa.
+// --- Filtro rápido, capa IA (Gemini, Edge Function) ---
+// Gemini responde las preguntas que se deducen del texto y llena esos campos del
+// filtro (marcados con 🤖, editables); el equipo responde el resto. El veredicto sale
+// de una regla fija: un "no" en una pregunta clave = No pasa; un "sin datos" o un "no"
+// en otra = Dudosa.
 
 const TRIAGE = L.AI_TRIAGE;
-const TRIAGE_STAGES = ['banco', 'filtro'];
 const TRIAGE_VALUES = {
     si: { label: 'Sí', color: 'var(--k-good)' }, no: { label: 'No', color: 'var(--k-bad)' },
     medio: { label: 'A medias', color: 'var(--k-s4)' }, sin_datos: { label: 'Sin datos', color: 'var(--k-neutral)' },
@@ -160,7 +162,7 @@ function triageStale(data) {
 }
 
 function needsTriage(data) {
-    return TRIAGE_STAGES.includes(data.status) && String(data.title || '').trim() && (!data.ai_filter || triageStale(data));
+    return data.status === 'filtro' && String(data.title || '').trim() && (!data.ai_filter || !data.ai_filter.applied || triageStale(data));
 }
 
 function triageRank(data) {
@@ -173,7 +175,34 @@ function triageChip(data) {
     if (!f) return '';
     const v = findOption(TRIAGE.VERDICTS, f.verdict);
     const stale = triageStale(data);
-    return `<span class="chip" style="--c:${v.color}" title="${stale ? 'La idea cambió desde la evaluación: vuelve a evaluarla' : 'Primer filtro con IA (sugerencia)'}">🤖 ${escapeHtml(v.label)}${stale ? ' ⟳' : ''}</span>`;
+    return `<span class="chip" style="--c:${v.color}" title="${stale ? 'La idea cambió desde la evaluación: vuelve a evaluarla' : 'Filtro rápido, capa IA'}">🤖 ${escapeHtml(v.label)}${stale ? ' ⟳' : ''}</span>`;
+}
+
+// ¿Este campo del filtro tiene hoy el valor que puso Gemini?
+function aiOwned(data, path) {
+    return Boolean(data.ai_set && data.ai_set[path] && getPath(data, path) === data.ai_set[path]);
+}
+
+// Llena los campos del filtro con las respuestas de Gemini, sin pisar lo que el
+// equipo respondió o corrigió. "Sin datos" deja el campo vacío para el equipo.
+function applyTriage(data, answers) {
+    const set = { ...(data.ai_set || {}) };
+    TRIAGE.QUESTIONS.filter(q => q.apply).forEach(q => {
+        const current = getPath(data, q.apply);
+        if (current && current !== set[q.apply]) {
+            delete set[q.apply];
+            return;
+        }
+        const value = (answers[q.id] || {}).valor;
+        if (!value || value === 'sin_datos') {
+            if (current) setPath(data, q.apply, '');
+            delete set[q.apply];
+            return;
+        }
+        setPath(data, q.apply, value);
+        set[q.apply] = value;
+    });
+    data.ai_set = set;
 }
 
 async function evaluateIdea(item) {
@@ -182,19 +211,21 @@ async function evaluateIdea(item) {
         idea: triageInput(data),
         questions: TRIAGE.QUESTIONS.map(({ id, label, help, options }) => ({ id, label, help, options }))
     });
-    const aiFilter = {
-        answers: result.answers || {}, falta: result.falta || '', resumen: result.resumen || '', model: result.model || '',
-        verdict: triageVerdict(result.answers || {}), hash: triageHash(data), at: new Date().toISOString()
-    };
+    const answers = result.answers || {};
     // Se guarda sobre la versión más reciente, por si alguien la editó mientras tanto.
-    const fresh = getItem(item.id) || item;
-    await saveItem({ ...fresh, data: { ...fresh.data, ai_filter: aiFilter } }, { rerender: false });
-    return aiFilter;
+    const fresh = JSON.parse(JSON.stringify(ideaData(getItem(item.id) || item)));
+    fresh.ai_filter = {
+        answers, falta: result.falta || '', resumen: result.resumen || '', model: result.model || '',
+        verdict: triageVerdict(answers), hash: triageHash(data), at: new Date().toISOString(), applied: true
+    };
+    applyTriage(fresh, answers);
+    await saveItem({ ...(getItem(item.id) || item), data: fresh }, { rerender: false });
+    return fresh;
 }
 
 async function runTriage() {
     if (triageRun) return;
-    if (LOCAL_MODE) return showToast('El filtro con IA necesita Supabase: no funciona en modo local', 'warning');
+    if (LOCAL_MODE) return showToast('La capa IA necesita Supabase: no funciona en modo local', 'warning');
     const pending = ideas().filter(i => needsTriage(ideaData(i)));
     if (!pending.length) return showToast('No hay ideas nuevas ni cambiadas por evaluar', 'warning');
     triageRun = { done: 0, total: pending.length };
@@ -219,37 +250,76 @@ async function runTriage() {
     else showToast(`✓ ${total} idea(s) evaluadas con Gemini`);
 }
 
-// Pasa al Filtro las ideas del banco que la IA marcó "Pasa" y cumplen los requisitos.
-function promotableIdeas() {
+// Banco → Filtro: todas las ideas que ya tienen idea, tema y beneficiario.
+function sendableIdeas() {
     return ideas().filter(i => {
         const d = ideaData(i);
-        return d.status === 'banco' && d.ai_filter && d.ai_filter.verdict === 'pasa' && !triageStale(d) && !ideaRequirements(d, 'filtro').length;
+        return d.status === 'banco' && !ideaRequirements(d, 'filtro').length;
     });
 }
 
-async function promoteIdeas() {
-    const list = promotableIdeas();
+async function sendToFilter() {
+    const list = sendableIdeas();
     for (const item of list) await saveItem({ ...item, data: { ...item.data, status: 'filtro' } }, { rerender: false });
+    ideaTab = 'filtro';
     render();
-    showToast(`✓ ${list.length} idea(s) pasaron al Filtro`);
+    showToast(`✓ ${list.length} idea(s) al Filtro rápido`);
+}
+
+// Filtro: las que Gemini marcó "No pasa" (y no cambiaron después).
+function rejectedIdeas() {
+    return ideas().filter(i => {
+        const d = ideaData(i);
+        return d.status === 'filtro' && d.ai_filter && d.ai_filter.verdict === 'no_pasa' && !triageStale(d);
+    });
+}
+
+function triageDiscardReason(data) {
+    const failed = TRIAGE.QUESTIONS.filter(q => q.key && (data.ai_filter.answers[q.id] || {}).valor === 'no');
+    return failed.map(q => q.discard || q.label).join('; ') + ' (filtro rápido, capa IA)';
+}
+
+async function discardRejected() {
+    const list = rejectedIdeas();
+    if (!list.length || !confirm(`¿Descartar ${list.length} idea(s) marcadas «No pasa»? Quedan en Descartadas con su motivo y se pueden restaurar.`)) return;
+    for (const item of list) {
+        const d = ideaData(item);
+        await saveItem({ ...item, data: { ...item.data, status: 'descartada', discarded_from: 'filtro', discard_reason: triageDiscardReason(d) } }, { rerender: false });
+    }
+    render();
+    showToast(`✓ ${list.length} idea(s) descartadas`);
 }
 
 function triageBar(all) {
-    if (!TRIAGE_STAGES.includes(ideaTab)) return '';
-    const inStages = all.filter(x => TRIAGE_STAGES.includes(x.data.status));
-    const pending = inStages.filter(x => needsTriage(x.data)).length;
-    const counts = TRIAGE.VERDICTS.map(v => chip({ ...v, label: `${v.label}: ${inStages.filter(x => x.data.ai_filter && x.data.ai_filter.verdict === v.id).length}` }));
-    const promotable = ideaTab === 'banco' ? promotableIdeas().length : 0;
+    if (ideaTab === 'banco') {
+        const sendable = sendableIdeas().length;
+        const waiting = all.filter(x => x.data.status === 'banco').length - sendable;
+        return `
+            <div class="ai-bar">
+                <div class="ai-bar-text">
+                    <strong>Lluvia de ideas</strong>
+                    <span class="form-hint">Anoten todo sin evaluar: idea, tema y beneficiario. Al terminar, mándenlas al Filtro rápido, donde Gemini hace el primer descarte.${waiting ? ` ${waiting} idea(s) aún sin tema o beneficiario.` : ''}</span>
+                </div>
+                <div class="ai-actions">
+                    <button class="btn btn-accent" data-action="send-to-filter" ${sendable ? '' : 'disabled'}>Mandar ${sendable} al Filtro →</button>
+                </div>
+            </div>`;
+    }
+    if (ideaTab !== 'filtro') return '';
+    const inFilter = all.filter(x => x.data.status === 'filtro');
+    const pending = inFilter.filter(x => needsTriage(x.data)).length;
+    const counts = TRIAGE.VERDICTS.map(v => chip({ ...v, label: `${v.label}: ${inFilter.filter(x => x.data.ai_filter && x.data.ai_filter.verdict === v.id).length}` }));
+    const rejected = rejectedIdeas().length;
     const label = triageRun ? `Evaluando ${Math.min(triageRun.done + 1, triageRun.total)} de ${triageRun.total}…` : `🤖 Evaluar con Gemini (${pending})`;
     return `
         <div class="ai-bar">
             <div class="ai-bar-text">
-                <strong>Primer filtro con IA</strong>
-                <span class="form-hint">${LOCAL_MODE ? 'Necesita Supabase: en modo local no está disponible.' : 'Gemini lee cada idea del banco y del filtro y responde preguntas cerradas. Es una sugerencia: el equipo decide qué pasa al benchmark.'}</span>
+                <strong>1 · Capa IA → 2 · Capa equipo</strong>
+                <span class="form-hint">${LOCAL_MODE ? 'La capa IA necesita Supabase: en modo local respondan todo a mano.' : 'Gemini responde lo que se deduce del texto y lo deja marcado con 🤖 (se puede corregir). Luego el equipo responde solo sus preguntas en las ideas que siguen.'}</span>
                 <div class="card-tags">${counts.join('')}</div>
             </div>
             <div class="ai-actions">
-                ${promotable ? `<button class="btn btn-ghost" data-action="ai-promote">Pasar ${promotable} «Pasa» al Filtro →</button>` : ''}
+                ${rejected ? `<button class="btn btn-ghost danger" data-action="ai-discard">Descartar ${rejected} «No pasa»</button>` : ''}
                 <button class="btn btn-accent" data-action="ai-triage" ${LOCAL_MODE || triageRun || !pending ? 'disabled' : ''}>${label}</button>
             </div>
         </div>`;
@@ -344,7 +414,7 @@ function ideaCard(item) {
                 ${data.theme ? chip(theme) : ''}
                 ${offering ? `<span class="chip" style="--c:${offering.color}" title="${escapeHtml(offering.hint)}">${offering.icon} ${escapeHtml(offering.label)}</span>` : ''}
                 ${f.level ? `<span class="chip" style="--c:${FEASIBILITY_LEVELS[f.level].color}" title="Semáforo de factibilidad en ${L.WORK_HOURS} h">● ${FEASIBILITY_LEVELS[f.level].label} ${f.points}/${f.max}</span>` : ''}
-                ${TRIAGE_STAGES.includes(data.status) || data.status === 'benchmark' ? triageChip(data) : ''}
+                ${data.status === 'filtro' || data.status === 'benchmark' ? triageChip(data) : ''}
                 ${data.beneficiary ? `<span class="chip outline" title="Beneficiario directo">👥 ${escapeHtml(data.beneficiary)}</span>` : ''}
             </div>
             ${progress}
@@ -360,11 +430,11 @@ function renderIdeasView() {
     const q = ideaSearch;
     const filtered = all.filter(({ item, data }) => data.status === ideaTab &&
         (!q || `${item.id} ${data.title} ${data.name} ${data.beneficiary} ${data.owner} ${findOption(L.THEMES, data.theme).label}`.toLowerCase().includes(q)));
-    if (ideaTab === 'banco') {
-        filtered.sort((a, b) => triageRank(a.data) - triageRank(b.data));
+    if (ideaTab === 'filtro') {
+        filtered.sort((a, b) => (triageRank(a.data) - triageRank(b.data)) || (feasibility(b.data).points - feasibility(a.data).points));
     }
-    if (ideaTab === 'filtro' || ideaTab === 'benchmark') {
-        filtered.sort((a, b) => (feasibility(b.data).points - feasibility(a.data).points) || (triageRank(a.data) - triageRank(b.data)));
+    if (ideaTab === 'benchmark') {
+        filtered.sort((a, b) => feasibility(b.data).points - feasibility(a.data).points);
     }
     if (ideaTab === 'validacion' || ideaTab === 'elegida') {
         filtered.sort((a, b) => (ideaScore(b.data) ?? -1) - (ideaScore(a.data) ?? -1));
@@ -444,32 +514,62 @@ function sectionIdea(d, open) {
     `, ideaRequirements(d, 'filtro').length === 0, 'idea');
 }
 
+// Opciones de cada campo del filtro, según dónde se guarda.
+function filterOptions(path) {
+    if (path === 'offering') return L.OFFERING_TYPES.map(o => ({ ...o, label: `${o.icon} ${o.label}` }));
+    if (path.startsWith('feasibility.')) return [{ id: 'si', label: 'Sí', color: 'var(--k-good)' }, { id: 'medio', label: 'A medias', color: 'var(--k-s4)' }, { id: 'no', label: 'No', color: 'var(--k-bad)' }];
+    return [{ id: 'si', label: 'Sí', color: 'var(--k-good)' }, { id: 'no', label: 'No', color: 'var(--k-bad)' }];
+}
+
+function filterRow(d, path, label, hint = '') {
+    return `
+        <div class="filter-row">
+            <span>${escapeHtml(label)}${hint ? `<span class="form-hint">${hint}</span>` : ''}</span>
+            ${pills(path, filterOptions(path), getPath(d, path))}
+        </div>`;
+}
+
 function sectionFilter(d, open) {
-    const yesNo = [{ id: 'si', label: 'Sí', color: 'var(--k-good)' }, { id: 'no', label: 'No', color: 'var(--k-bad)' }];
-    const triple = [{ id: 'si', label: 'Sí', color: 'var(--k-good)' }, { id: 'medio', label: 'A medias', color: 'var(--k-s4)' }, { id: 'no', label: 'No', color: 'var(--k-bad)' }];
-    const offerings = L.OFFERING_TYPES.map(o => ({ ...o, label: `${o.icon} ${o.label}` }));
+    const f = d.ai_filter;
+    const stale = triageStale(d);
+    const applied = new Set(TRIAGE.QUESTIONS.filter(q => q.apply).map(q => q.apply));
+    // Capa IA: preguntas que Gemini responde (las sin campo, como "problema", solo informan).
+    const aiRows = TRIAGE.QUESTIONS.map(q => {
+        const a = f ? f.answers[q.id] || {} : {};
+        if (!q.apply) {
+            const val = TRIAGE_VALUES[a.valor] || { label: 'Sin evaluar', color: 'var(--k-neutral)' };
+            return `<div class="filter-row"><span>${escapeHtml(q.label)}${a.motivo ? `<span class="form-hint">🤖 ${escapeHtml(a.motivo)}</span>` : ''}</span>${chip(val)}</div>`;
+        }
+        let hint = '';
+        if (aiOwned(d, q.apply)) hint = `🤖 ${escapeHtml(a.motivo || 'Respondido por Gemini')}`;
+        else if (f && a.valor === 'sin_datos') hint = `🤖 Sin datos: ${escapeHtml(a.motivo || 'la idea no lo dice')}. Respóndanlo ustedes.`;
+        else if (getPath(d, q.apply) && d.ai_set && f) hint = '👥 Respondido por el equipo';
+        return filterRow(d, q.apply, q.label, hint);
+    }).join('');
+    // Capa equipo: lo que la IA no puede saber.
+    const teamRows = [
+        ...L.FEASIBILITY.filter(q => !applied.has(`feasibility.${q.id}`)).map(q => filterRow(d, `feasibility.${q.id}`, q.label)),
+        ...L.QUICK_FILTER.filter(q => !applied.has(`filter.${q.id}`)).map(q => filterRow(d, `filter.${q.id}`, q.label))
+    ].join('');
     const offering = d.offering ? findOption(L.OFFERING_TYPES, d.offering) : null;
+    const verdict = f ? findOption(TRIAGE.VERDICTS, f.verdict) : null;
     return fold('2 · Filtro rápido (fase 1)', open, `
-        <div class="form-group"><label class="form-label">¿Es producto o servicio? <span class="req-star">*</span></label>
-            ${pills('offering', offerings, d.offering)}
-            <p class="form-hint" id="offeringHint">${offering ? escapeHtml(offering.hint) : 'Define el plan de trabajo: maqueta 3D si es producto, análisis financiero si es servicio.'}</p>
+        <div class="subgroup">
+            <div class="subgroup-title">1 · Capa IA ${verdict ? chip(verdict) : ''}</div>
+            ${f ? `<p class="form-hint">${escapeHtml(f.resumen)} · ${escapeHtml(f.model)}, ${escapeHtml(timeAgo(f.at))}. Lo marcado con 🤖 lo respondió Gemini: corríjanlo si no corresponde.</p>`
+                : `<p class="form-hint">${LOCAL_MODE ? 'En modo local no hay IA: respondan estas preguntas a mano.' : 'Todavía no se evalúa con Gemini. También se pueden responder a mano.'}</p>`}
+            ${stale ? '<div class="req warn">La idea cambió desde la evaluación: vuelve a evaluarla.</div>' : ''}
+            ${aiRows}
+            ${offering ? `<p class="form-hint">${escapeHtml(offering.hint)}</p>` : ''}
+            ${f && f.falta ? `<p class="form-hint"><strong>Falta:</strong> ${escapeHtml(f.falta)}</p>` : ''}
+            <div class="ai-actions">
+                <button type="button" class="btn btn-ghost" data-modal-action="ai-eval" ${LOCAL_MODE || !String(d.title || '').trim() ? 'disabled' : ''}>🤖 ${f ? 'Evaluar de nuevo' : 'Evaluar con Gemini'}</button>
+            </div>
         </div>
         <div class="subgroup">
-            <div class="subgroup-title">Semáforo de factibilidad en ${L.WORK_HOURS} h de trabajo <span id="feasBadge">${feasibilityBadge(d)}</span></div>
-            ${L.FEASIBILITY.map(q => `
-                <div class="filter-row">
-                    <span>${escapeHtml(q.label)}</span>
-                    ${pills(`feasibility.${q.id}`, triple, d.feasibility[q.id])}
-                </div>`).join('')}
-        </div>
-        <div class="subgroup">
-            <div class="subgroup-title">Filtro de las bases</div>
-            <p class="form-hint">Descartar si falla alguno.</p>
-            ${L.QUICK_FILTER.map(q => `
-                <div class="filter-row">
-                    <span>${escapeHtml(q.label)}</span>
-                    ${pills(`filter.${q.id}`, yesNo, d.filter[q.id])}
-                </div>`).join('')}
+            <div class="subgroup-title">2 · Capa equipo <span id="feasBadge">${feasibilityBadge(d)}</span></div>
+            <p class="form-hint">Lo que la IA no puede saber. El semáforo de factibilidad en ${L.WORK_HOURS} h sale de estas respuestas y de la demo.</p>
+            ${teamRows}
         </div>
     `, ideaRequirements(d, 'benchmark').length === 0, 'filtro');
 }
@@ -641,53 +741,14 @@ function sectionBenchmark(d, open) {
     `, ideaRequirements(d, 'ficha').length === 0, 'benchmark');
 }
 
-// --- Primer filtro con IA en la ventana de la idea ---
-
-function sectionTriage(d) {
-    const f = d.ai_filter;
-    const stale = triageStale(d);
-    const v = f ? findOption(TRIAGE.VERDICTS, f.verdict) : null;
-    const body = !f ? `<p class="form-hint">Todavía no se evalúa. ${LOCAL_MODE ? 'Necesita Supabase.' : 'Guarda la idea y usa «Evaluar con Gemini».'}</p>` : `
-        <div class="filter-row"><span><strong>Sugerencia:</strong> ${chip(v)} ${escapeHtml(f.resumen)}</span></div>
-        ${stale ? '<div class="req warn">La idea cambió desde esta evaluación: vuelve a evaluarla.</div>' : ''}
-        ${TRIAGE.QUESTIONS.map(q => {
-            const a = f.answers[q.id] || {};
-            const val = TRIAGE_VALUES[a.valor] || { label: a.valor || '—', color: 'var(--k-neutral)' };
-            return `<div class="filter-row"><span>${escapeHtml(q.label)}<span class="form-hint">${escapeHtml(a.motivo || '')}</span></span>${chip(val)}</div>`;
-        }).join('')}
-        ${f.falta ? `<p class="form-hint"><strong>Falta:</strong> ${escapeHtml(f.falta)}</p>` : ''}
-        <p class="form-hint">${escapeHtml(f.model)} · ${escapeHtml(timeAgo(f.at))}. Es una sugerencia: el semáforo y el filtro los confirma el equipo.</p>`;
-    return fold('🤖 Primer filtro con IA', false, `
-        ${body}
-        <div class="ai-actions">
-            ${f ? '<button type="button" class="btn btn-ghost" data-modal-action="ai-apply">Aplicar sugerencias al filtro</button>' : ''}
-            <button type="button" class="btn btn-ghost" data-modal-action="ai-eval" ${LOCAL_MODE || !String(d.title || '').trim() ? 'disabled' : ''}>${f ? 'Evaluar de nuevo' : 'Evaluar con Gemini'}</button>
-        </div>
-    `, Boolean(f) && !stale, 'ia');
-}
-
-// Llena los campos del filtro que siguen vacíos con lo que sugirió la IA.
-function applyTriage() {
-    const f = draft.ai_filter;
-    let n = 0;
-    TRIAGE.QUESTIONS.filter(q => q.apply).forEach(q => {
-        const value = (f.answers[q.id] || {}).valor;
-        if (!value || value === 'sin_datos' || getPath(draft, q.apply)) return;
-        setPath(draft, q.apply, value);
-        n++;
-    });
-    if (n) hasUnsavedChanges = true;
-    renderModalBody();
-    showToast(n ? `✓ ${n} campo(s) del filtro llenados: revísenlos y guarden` : 'Los campos del filtro ya tenían respuesta', n ? 'success' : 'warning');
-}
-
 async function evaluateOpenIdea() {
     if (!String(draft.title || '').trim()) return;
     // Se evalúa lo guardado: primero se guardan los cambios pendientes.
     if (hasUnsavedChanges || !getItem(currentEditingId)) await persistIdea('');
     showToast('🤖 Evaluando con Gemini…', 'success', 2000);
     try {
-        draft.ai_filter = await evaluateIdea(getItem(currentEditingId));
+        draft = await evaluateIdea(getItem(currentEditingId));
+        hasUnsavedChanges = false;
         renderModalBody();
         showToast(`✓ Evaluada: ${findOption(TRIAGE.VERDICTS, draft.ai_filter.verdict).label}`);
     } catch (e) {
@@ -817,7 +878,6 @@ function renderModalBody() {
         </div>
         <div class="req-box" id="reqBox"></div>
         ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}
-        ${reached <= ideaStageIndex('benchmark') ? sectionTriage(d) : ''}
         ${reached >= 1 ? sectionPlan(d, false) : ''}`;
     openKeys.forEach(([key, open]) => {
         const el = body.querySelector(`details[data-fold="${key}"]`);
@@ -958,7 +1018,6 @@ function handleModalAction(action, el) {
             draft.benchmark.research.splice(Number(el.dataset.index), 1);
             hasUnsavedChanges = true;
             return renderModalBody();
-        case 'ai-apply': return applyTriage();
         case 'ai-eval': return evaluateOpenIdea();
         case 'plan-tasks': return addPlanTasks();
         case 'remove-validation':
@@ -1016,6 +1075,7 @@ function setupIdeaModal() {
         if (el.dataset.draft === 'title' || el.dataset.draft === 'name') renderModalHeader();
         // El tipo cambia el plan de trabajo; las respuestas del semáforo, su resultado.
         if (el.dataset.draft === 'offering' || el.dataset.draft.startsWith('plan_done.')) return renderModalBody();
+        if (draft.ai_set && el.dataset.draft in draft.ai_set) return renderModalBody();
         if (el.dataset.draft.startsWith('feasibility.')) document.getElementById('feasBadge').innerHTML = feasibilityBadge(draft);
         updateRequirementsBox();
     };
@@ -1070,7 +1130,8 @@ registerView({
             deleteIdea(el.dataset.id);
         },
         'ai-triage': () => runTriage(),
-        'ai-promote': () => promoteIdeas()
+        'ai-discard': () => discardRejected(),
+        'send-to-filter': () => sendToFilter()
     }
 });
 

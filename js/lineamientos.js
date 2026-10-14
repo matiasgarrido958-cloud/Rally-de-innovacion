@@ -65,12 +65,14 @@ window.LINEAMIENTOS = {
         ]
     },
 
-    // Primer filtro con IA (después de la lluvia de ideas): Gemini lee cada idea y
-    // responde solo preguntas cerradas; el veredicto lo calcula la página con una regla
-    // fija y el equipo decide. Pasa por la Edge Function supabase/functions/filtrar-idea.
+    // Filtro rápido, capa IA: Gemini lee cada idea y responde solo las preguntas que se
+    // deducen del texto; el resto del filtro lo responde el equipo. El veredicto lo calcula
+    // la página con una regla fija. Pasa por la Edge Function supabase/functions/filtrar-idea.
     // help: definición exacta que recibe el modelo (un modelo simple necesita reglas claras).
-    // apply: campo del filtro que se llena con «Aplicar sugerencias» (solo si está vacío).
+    // apply: campo del filtro que Gemini llena directamente (marcado con 🤖, editable).
+    //   Si el equipo ya lo respondió o lo corrigió, Gemini no lo pisa.
     // key: un "no" en esta pregunta = No pasa; "sin datos" = Dudosa.
+    // discard: motivo con que se descarta si esta pregunta da "no".
     AI_TRIAGE: {
         FUNCTION: 'filtrar-idea',
         DELAY_MS: 6000,
@@ -79,18 +81,22 @@ window.LINEAMIENTOS = {
                 options: ['producto', 'servicio', 'mixto', 'sin_datos'],
                 help: 'producto = algo físico o un dispositivo que se fabrica; servicio = una prestación, plataforma o app; mixto = un dispositivo con un servicio asociado; sin_datos = la descripción no permite saberlo.' },
             { id: 'beneficiario', label: '¿El beneficiario es directo y específico?', apply: 'filter.beneficiario', key: true,
+                discard: 'Sin beneficiario directo y específico',
                 options: ['si', 'no', 'sin_datos'],
                 help: 'si = nombra un grupo concreto de personas u organizaciones (por ejemplo «adultos mayores que viven solos en comunas rurales»); no = es genérico («la sociedad», «las personas», «todos», «el medio ambiente»); sin_datos = no se menciona.' },
             { id: 'problema', label: '¿Se entiende qué problema resuelve?', key: true,
+                discard: 'Otro: no se entiende qué problema resuelve',
                 options: ['si', 'no', 'sin_datos'],
                 help: 'si = se puede decir en una frase qué necesidad o dolor del beneficiario resuelve; no = describe una tecnología o un producto sin un problema claro; sin_datos = la descripción es demasiado corta para saberlo.' },
             { id: 'quien_paga', label: '¿Se identifica quién pagaría?', apply: 'filter.economica', key: true,
+                discard: 'Sin factibilidad económica',
                 options: ['si', 'no', 'sin_datos'],
                 help: 'si = la idea nombra o deja claro un pagador (el usuario, un municipio, una empresa, una ONG, el Estado); no = por su naturaleza nadie la pagaría ni la financiaría; sin_datos = no se menciona y no es evidente.' },
             { id: 'demo', label: '¿Hay algo concreto que mostrar en un video de 2 min?', apply: 'feasibility.demo',
                 options: ['si', 'medio', 'no'],
                 help: 'si = se puede mostrar una maqueta 3D, un mockup de pantalla o un flujo paso a paso; medio = se puede, pero solo con bastante trabajo; no = es un concepto abstracto sin nada visible que mostrar.' },
             { id: 'reporte', label: '¿Cabe en el reporte pautado?', apply: 'filter.reporte', key: true,
+                discard: 'No cabe en el reporte pautado',
                 options: ['si', 'no'],
                 help: 'si = se puede explicar con problema, beneficiario, solución, costos e impacto en un reporte breve; no = es demasiado amplia (un sistema nacional completo, varias soluciones juntas) o demasiado vaga para ese formato.' }
         ],

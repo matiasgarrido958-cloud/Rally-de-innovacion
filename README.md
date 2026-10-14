@@ -34,8 +34,8 @@ qué falta). Retroceder siempre se puede.
 
 | Etapa | Qué se completa | Requisito para avanzar |
 |---|---|---|
-| 1. Banco de ideas | Idea en 1 línea, nombre, tema, beneficiario directo, responsable, notas | Idea, tema y beneficiario |
-| 2. Filtro rápido (fase 1) | Producto, servicio o ambos; semáforo de factibilidad en 15 h de trabajo (4 preguntas Sí / A medias / No); las 4 preguntas del filtro de las bases | Tipo elegido, semáforo verde o amarillo y el filtro todo en "Sí". Rojo o un "No": descartarla |
+| 1. Banco de ideas | Lluvia de ideas: idea en 1 línea, nombre, tema, beneficiario directo, responsable, notas | Idea, tema y beneficiario |
+| 2. Filtro rápido (fase 1) | Capa IA (Gemini llena tipo, beneficiario, quién paga, reporte y demo) y capa equipo (sabemos construirla, a quién validarla, datos públicos, prototipo en 15 h); semáforo de factibilidad en 15 h | Tipo elegido, semáforo verde o amarillo y el filtro todo en "Sí". Rojo o un "No": descartarla |
 | 3. Benchmark (fase 2) | Qué se hace en el mundo, investigado por el equipo (fuentes propias e IA gratuita con el prompt que arma la página): referentes con país, enlace y diferencia; tendencia; diferenciación; decisión | ≥2 referentes con nombre y diferencia, diferenciación escrita y decisión "Seguir" |
 | 4. Ficha de idea | Campos a–k de la ficha | a, b, c, d, e, costo inicial, quién paga, g y h |
 | 5. Validación | Validaciones (entrevista, encuesta, mentor…) con hallazgo y puntaje 1–5 en los criterios del jurado | ≥1 validación con hallazgo y todos los criterios puntuados |
@@ -54,15 +54,24 @@ reciclaje (ya ganaron Hojabeta y The Last Resort), si faltan fuentes APA o si ha
 Temas, preguntas del filtro y del semáforo, horas de trabajo (`WORK_HOURS`), planes por tipo, criterios, motivos de descarte, tareas, checklists y bloques del pitch se
 editan en `js/lineamientos.js`.
 
-## Primer filtro con IA (Gemini)
+## Filtro rápido con IA (Gemini)
 
-Después de la lluvia de ideas, en *Banco* y *Filtro* el botón **Evaluar con Gemini** revisa una por una
-las ideas nuevas o cambiadas. Gemini solo responde preguntas cerradas sobre lo que dice la idea (tipo,
-beneficiario específico, problema claro, quién paga, qué mostrar en el video, si cabe en el reporte) y
-la página calcula el veredicto con una regla fija: un "no" en una pregunta clave = **No pasa**; un
-"sin datos" u otro "no" = **Dudosa**; el resto **Pasa**. Es una sugerencia: el botón *Pasar al Filtro*
-mueve las que pasan, y en la ventana de cada idea *Aplicar sugerencias al filtro* llena solo los campos
-vacíos. Las preguntas y sus reglas se editan en `AI_TRIAGE` dentro de `js/lineamientos.js`.
+El proceso es: **Banco** (lluvia de ideas, sin evaluar) → *Mandar al Filtro* → **Filtro rápido** en dos
+capas → **Benchmark** solo con las que pasan.
+
+1. **Capa IA.** *Evaluar con Gemini* revisa una por una las ideas del Filtro que son nuevas o cambiaron.
+   Gemini responde solo lo que se deduce del texto (tipo, beneficiario específico, problema claro, quién
+   paga, qué mostrar en el video, si cabe en el reporte) y **llena esos campos del filtro**, marcados
+   con 🤖. El equipo puede corregirlos; lo que el equipo respondió o corrigió no se pisa al volver a
+   evaluar, y "sin datos" queda vacío para que lo responda el equipo. La página calcula el veredicto
+   con una regla fija: un "no" en una pregunta clave = **No pasa**; un "sin datos" u otro "no" =
+   **Dudosa**; el resto **Pasa**. *Descartar «No pasa»* las descarta de una vez con el motivo de la
+   pregunta que falló (quedan en *Descartadas* y se pueden restaurar).
+2. **Capa equipo.** El equipo responde solo lo que la IA no puede saber (si saben construirla, a quién
+   validarla, si hay datos públicos, si se prototipa en 15 h). Con eso sale el semáforo.
+
+Las preguntas de Gemini, sus reglas, qué campo llenan y el motivo de descarte se editan en `AI_TRIAGE`
+dentro de `js/lineamientos.js`.
 
 La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
 `supabase/functions/filtrar-idea`, que solo responde a usuarios con sesión.
