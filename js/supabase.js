@@ -127,15 +127,22 @@ function supabaseDelete(table, id) {
 // Llama a una Edge Function de Supabase con la sesión del usuario.
 async function supabaseFunction(name, body, retried = false) {
     const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG;
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${await getAccessToken()}`
-        },
-        body: JSON.stringify(body)
-    });
+    let response;
+    try {
+        response = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${await getAccessToken()}`
+            },
+            body: JSON.stringify(body)
+        });
+    } catch (e) {
+        // El navegador no recibió respuesta: la función no existe con ese nombre o se cayó.
+        if (e instanceof AuthError) throw e;
+        throw new Error(`No se pudo conectar con la función «${name}». Revisa en Supabase → Edge Functions que exista con ese nombre exacto y mira sus Logs`);
+    }
     if (response.status === 401 && !retried) {
         await refreshSession();
         return supabaseFunction(name, body, true);

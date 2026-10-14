@@ -92,8 +92,19 @@ function responseSchema(questions: Question[]) {
     return { type: 'OBJECT', properties, required: [...questions.map(q => q.id), 'falta', 'resumen'] };
 }
 
+// Cualquier error inesperado se devuelve como JSON con CORS; si no, el navegador
+// solo muestra "Failed to fetch" y no se sabe qué pasó.
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+    try {
+        return await handle(req);
+    } catch (error) {
+        console.error(error);
+        return json({ error: `Error en filtrar-idea: ${error instanceof Error ? error.message : String(error)}` }, 500);
+    }
+});
+
+async function handle(req: Request) {
     if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405);
     if (!await hasSession(req)) return json({ error: 'Inicia sesión en el workspace para usar el filtro con IA.' }, 401);
 
@@ -142,4 +153,4 @@ Deno.serve(async (req) => {
         answers[q.id] = { valor, motivo: clip(r.motivo, 300) };
     });
     return json({ answers, falta: clip(raw.falta, 300), resumen: clip(raw.resumen, 300), model });
-});
+}
