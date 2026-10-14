@@ -7,9 +7,9 @@
 //   GEMINI_API_KEY  clave de Google AI Studio (https://aistudio.google.com/apikey)
 //   GEMINI_MODELS   opcional; modelos preferidos en orden, separados por comas.
 //                   Sin esto, la función detecta sola los modelos Gemini disponibles
-//                   para la clave y los ordena (flash, luego lite, luego pro; versión
-//                   más nueva primero). Si uno está saturado, sin cuota o falla, usa
-//                   el siguiente: la cuota gratuita es por modelo.
+//                   para la clave y los ordena alternando flash y lite (versión más
+//                   nueva primero), luego otros y pro. Si uno está saturado, sin cuota
+//                   o falla, usa el siguiente: la cuota gratuita es por modelo.
 // Deja activado "Verify JWT": solo usuarios con sesión en el workspace pueden usarla.
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -33,7 +33,7 @@ function preferredModels() {
     return raw.split(/[,\n]/).map(cleanModel).filter(Boolean);
 }
 
-// Orden: flash, lite, otros, pro; estables antes que preview; versión más nueva primero.
+// Grupo: flash, lite, otros, pro; estables antes que preview; versión más nueva primero.
 function modelRank(name: string) {
     const tier = /flash-lite|lite/.test(name) ? 1 : /flash/.test(name) ? 0 : /pro/.test(name) ? 3 : 2;
     const preview = /preview|exp/.test(name) ? 1 : 0;
@@ -59,8 +59,18 @@ async function discoverModels(key: string) {
                 const a = modelRank(x), b = modelRank(y);
                 return a.tier - b.tier || a.preview - b.preview || b.version - a.version || x.localeCompare(y);
             });
-        discovered = { at: Date.now(), models };
-        return models;
+        // Alterna flash y lite: si todos los flash están saturados, los lite (más
+        // livianos) se prueban antes de que se acabe el tiempo.
+        const flash = models.filter((m: string) => modelRank(m).tier === 0);
+        const lite = models.filter((m: string) => modelRank(m).tier === 1);
+        const rest = models.filter((m: string) => modelRank(m).tier > 1);
+        const mixed: string[] = [];
+        for (let i = 0; i < Math.max(flash.length, lite.length); i++) {
+            if (flash[i]) mixed.push(flash[i]);
+            if (lite[i]) mixed.push(lite[i]);
+        }
+        discovered = { at: Date.now(), models: [...mixed, ...rest] };
+        return discovered.models;
     } catch {
         return [];
     }
