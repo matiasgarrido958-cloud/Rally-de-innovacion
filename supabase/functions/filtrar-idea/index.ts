@@ -15,6 +15,11 @@
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 const MAX_MODELS_PER_REQUEST = 8;
+// Límites de tiempo: Supabase corta la función si tarda demasiado y el navegador
+// solo ve "no se pudo conectar". Cada modelo tiene MODEL_TIMEOUT_MS y no se prueban
+// modelos nuevos después de TOTAL_BUDGET_MS.
+const MODEL_TIMEOUT_MS = 20000;
+const TOTAL_BUDGET_MS = 60000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 let discovered: { at: number; models: string[] } | null = null;
 
@@ -40,7 +45,9 @@ function modelRank(name: string) {
 async function discoverModels(key: string) {
     if (discovered && Date.now() - discovered.at < DISCOVERY_TTL_MS) return discovered.models;
     try {
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', { headers: { 'x-goog-api-key': key } });
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', {
+            headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(10000)
+        });
         if (!response.ok) return [];
         const data = await response.json();
         const models = (data.models || [])
@@ -68,15 +75,23 @@ async function modelList(key: string) {
 type Attempt = { ok: true; raw: Record<string, Record<string, unknown>> } | { ok: false; status: number; detail: string; next: boolean };
 
 async function askModel(model: string, key: string, prompt: string, schema: unknown): Promise<Attempt> {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
-        })
-    });
-    const text = await response.text();
+    let response: Response;
+    let text: string;
+    try {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
+            }),
+            signal: AbortSignal.timeout(MODEL_TIMEOUT_MS)
+        });
+        text = await response.text();
+    } catch {
+        // Tardó demasiado o se cortó la conexión: probar el siguiente.
+        return { ok: false, status: 504, detail: 'sin respuesta a tiempo', next: true };
+    }
     if (!response.ok) {
         // Saturado, sin cuota, caído o modelo inexistente para esta clave: probar el siguiente.
         // Un 400 que no es de la clave (p. ej. un modelo que no acepta el formato JSON) también.
@@ -127,7 +142,7 @@ async function hasSession(req: Request) {
     const apikey = req.headers.get('apikey') || Deno.env.get('SUPABASE_ANON_KEY') || '';
     if (!auth.startsWith('Bearer ') || !apikey) return false;
     const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/auth/v1/user`, {
-        headers: { Authorization: auth, apikey }
+        headers: { Authorization: auth, apikey }, signal: AbortSignal.timeout(10000)
     });
     return response.ok;
 }
@@ -211,7 +226,9 @@ async function handle(req: Request) {
     const failures: { model: string; status: number; detail: string }[] = [];
     let raw: Record<string, Record<string, unknown>> | null = null;
     let model = '';
+    const started = Date.now();
     for (const candidate of await modelList(key)) {
+        if (Date.now() - started > TOTAL_BUDGET_MS) break;
         const attempt = await askModel(candidate, key, prompt, schema);
         if (attempt.ok) {
             raw = attempt.raw;
@@ -222,6 +239,7 @@ async function handle(req: Request) {
         if (!attempt.next) return json({ error: `Gemini respondió ${attempt.status} (${candidate}): ${attempt.detail}` }, 502);
     }
     if (!raw) {
+        if (!failures.length) return json({ error: 'Gemini respondió 503: no hubo tiempo de probar modelos. Vuelve a intentar.' }, 503);
         const summary = failures.map(f => `${f.model}: ${f.status}`).join(', ');
         if (failures.every(f => f.status === 429)) {
             return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto y vuelve a intentar.` }, 429);
