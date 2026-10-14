@@ -220,6 +220,12 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
 .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--stage); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 9px; box-shadow: var(--shadow-sm); transition: box-shadow 0.2s, transform 0.2s; }
 .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.card.selected { outline: 2px solid var(--k-bad); outline-offset: 2px; }
+.card-check { position: absolute; top: 10px; right: 10px; width: 24px; height: 24px; border: 2px solid var(--border); border-radius: 6px; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; background: var(--surface); }
+.card.selected .card-check { background: var(--k-bad); border-color: var(--k-bad); }
+.card:has(.card-check) .card-delete { display: none; }
+.card:has(.card-check) .card-top { padding-right: 32px; }
+.selection-bar { border-color: var(--k-bad); }
 .card:focus-visible, .mini-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .card-top { display: flex; align-items: center; gap: 8px; padding-right: 34px; }
 .card-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--muted); }

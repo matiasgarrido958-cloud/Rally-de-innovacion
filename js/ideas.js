@@ -42,6 +42,8 @@ const FICHA_FLAT = FICHA_FIELDS.flatMap(f => f.group ? f.fields : [f]);
 
 let ideaTab = 'banco';
 let ideaSearch = '';
+// Selección múltiple de tarjetas para borrar en grupo (null = modo apagado).
+let ideaSelection = null;
 let draft = null;
 
 function ideas() {
@@ -403,6 +405,44 @@ async function deleteTestIdeas() {
     showToast('Datos de prueba eliminados');
 }
 
+// --- Selección múltiple: marcar varias tarjetas y borrarlas en grupo ---
+
+function selectionBar(visibleIds) {
+    const n = ideaSelection.size;
+    const allVisible = visibleIds.length && visibleIds.every(id => ideaSelection.has(id));
+    return `
+        <div class="ai-bar selection-bar">
+            <div class="ai-bar-text">
+                <strong>${n} idea(s) seleccionada(s)</strong>
+                <span class="form-hint">Toca las tarjetas para marcarlas. La selección se mantiene al cambiar de etapa.</span>
+            </div>
+            <div class="ai-actions">
+                <button class="btn btn-ghost" data-action="select-all" data-ids="${escapeHtml(visibleIds.join(','))}" ${visibleIds.length ? '' : 'disabled'}>${allVisible ? 'Quitar las de esta etapa' : `Marcar las ${visibleIds.length} de esta etapa`}</button>
+                <button class="btn btn-ghost" data-action="select-none" ${n ? '' : 'disabled'}>Ninguna</button>
+                <button class="btn btn-ghost danger" data-action="delete-selected" ${n ? '' : 'disabled'}>🗑 Borrar ${n}</button>
+            </div>
+        </div>`;
+}
+
+function toggleSelected(id) {
+    if (ideaSelection.has(id)) ideaSelection.delete(id);
+    else ideaSelection.add(id);
+    render();
+}
+
+async function deleteSelected() {
+    const ids = [...ideaSelection].filter(id => getItem(id));
+    if (!ids.length) return;
+    const preview = ids.slice(0, 8).join(', ') + (ids.length > 8 ? '…' : '');
+    if (!confirm(`¿Borrar definitivamente ${ids.length} idea(s)? (${preview})\nNo se puede deshacer.`)) return;
+    if (ids.includes(currentEditingId)) closeIdea(true);
+    let ok = 0;
+    for (const id of ids) if (await deleteItem(id)) ok++;
+    ideaSelection = null;
+    render();
+    showToast(`🗑 ${ok} idea(s) borradas`);
+}
+
 // Banco → Filtro: todas las ideas que ya tienen idea, tema y beneficiario.
 function sendableIdeas() {
     return ideas().filter(i => {
@@ -563,7 +603,8 @@ function ideaCard(item) {
             : `<div class="card-progress ready">✓ Lista para pasar a ${escapeHtml(next.label)}</div>`;
     }
     return `
-        <article class="card" data-idea="${escapeHtml(item.id)}" tabindex="0" style="--stage:${stage.color}">
+        <article class="card ${ideaSelection && ideaSelection.has(item.id) ? 'selected' : ''}" data-idea="${escapeHtml(item.id)}" tabindex="0" style="--stage:${stage.color}" ${ideaSelection ? `aria-pressed="${ideaSelection.has(item.id)}"` : ''}>
+            ${ideaSelection ? `<span class="card-check" aria-hidden="true">${ideaSelection.has(item.id) ? '✓' : ''}</span>` : ''}
             ${data.status === 'descartada' ? `<button class="card-delete" data-action="delete-idea" data-id="${escapeHtml(item.id)}" aria-label="Eliminar definitivamente" title="Eliminar definitivamente"><svg><use href="#i-trash"/></svg></button>` : ''}
             <div class="card-top">
                 <span class="card-id">${escapeHtml(item.id)}</span>
@@ -627,11 +668,12 @@ function renderIdeasView() {
         </nav>
         <div class="board-bar">
             <p class="stage-hint"><strong>${escapeHtml(current.label)}:</strong> ${escapeHtml(current.hint)}</p>
+            <button class="discard-tab ${ideaSelection ? 'active' : ''}" data-action="select-mode" aria-pressed="${Boolean(ideaSelection)}">☑ ${ideaSelection ? 'Terminar selección' : 'Seleccionar'}</button>
             <button class="discard-tab ${ideaTab === 'descartada' ? 'active' : ''}" data-action="idea-tab" data-status="descartada" aria-pressed="${ideaTab === 'descartada'}">
                 <svg><use href="#i-archive"/></svg>Descartadas (${discardedCount})
             </button>
         </div>
-        ${triageBar(all)}
+        ${ideaSelection ? selectionBar(filtered.map(x => x.item.id)) : triageBar(all)}
         <div class="grid">
             ${filtered.length ? filtered.map(x => ideaCard(x.item)).join('') : `
                 <div class="empty">
@@ -1335,6 +1377,21 @@ registerView({
             e.stopPropagation();
             deleteIdea(el.dataset.id);
         },
+        'select-mode': () => {
+            ideaSelection = ideaSelection ? null : new Set();
+            render();
+        },
+        'select-all': (el) => {
+            const ids = el.dataset.ids ? el.dataset.ids.split(',') : [];
+            const allIn = ids.every(id => ideaSelection.has(id));
+            ids.forEach(id => (allIn ? ideaSelection.delete(id) : ideaSelection.add(id)));
+            render();
+        },
+        'select-none': () => {
+            ideaSelection.clear();
+            render();
+        },
+        'delete-selected': () => deleteSelected(),
         'ai-triage': () => runTriage(),
         'ai-discard': () => discardRejected(),
         'send-to-filter': () => sendToFilter(),
@@ -1347,13 +1404,16 @@ registerView({
 document.getElementById('content').addEventListener('click', (e) => {
     if (e.target.closest('[data-action]')) return;
     const card = e.target.closest('[data-idea]');
-    if (card) openIdea(card.dataset.idea);
+    if (!card) return;
+    if (ideaSelection && currentView === 'ideas') toggleSelected(card.dataset.idea);
+    else openIdea(card.dataset.idea);
 });
 document.getElementById('content').addEventListener('keydown', (e) => {
     const card = e.target.closest('[data-idea]');
     if (card && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault();
-        openIdea(card.dataset.idea);
+        if (ideaSelection && currentView === 'ideas') toggleSelected(card.dataset.idea);
+        else openIdea(card.dataset.idea);
     }
 });
 setupIdeaModal();
