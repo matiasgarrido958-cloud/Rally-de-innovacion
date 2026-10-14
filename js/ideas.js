@@ -270,7 +270,7 @@ async function evaluateIdea(item, { retry = true } = {}) {
     return fresh;
 }
 
-function formatDuration(ms) {
+function shortDuration(ms) {
     const total = Math.max(0, Math.round(ms / 1000));
     return total < 60 ? `${total} s` : `${Math.floor(total / 60)} min ${String(total % 60).padStart(2, '0')} s`;
 }
@@ -318,7 +318,7 @@ async function runTriage() {
     triageRun = null;
     requestRender();
     const summary = TRIAGE.VERDICTS.filter(v => counts[v.id]).map(v => `${counts[v.id]} ${v.label}`).join(', ');
-    const took = formatDuration(Date.now() - started);
+    const took = shortDuration(Date.now() - started);
     if (stopped) {
         showToast(`❌ Se detuvo tras ${streak} fallo(s) seguidos: ${stopped.message.replace(/\.$/, '')}. Evaluadas ${ok} de ${total} en ${took}${summary ? ` (${summary})` : ''}; vuelve a apretar para seguir con las que faltan.`, 'error', 12000);
     } else if (failed.length) {
@@ -440,7 +440,7 @@ function triageBar(all) {
     if (triageRun) {
         const elapsed = Date.now() - triageRun.started;
         const left = triageRun.done ? (elapsed / triageRun.done) * (triageRun.total - triageRun.done) : 0;
-        label = `Evaluando ${Math.min(triageRun.done + 1, triageRun.total)} de ${triageRun.total} · ${formatDuration(elapsed)}${left ? ` · faltan ~${formatDuration(left)}` : ''}`;
+        label = `Evaluando ${Math.min(triageRun.done + 1, triageRun.total)} de ${triageRun.total} · ${shortDuration(elapsed)}${left ? ` · faltan ~${shortDuration(left)}` : ''}`;
     }
     return `
         <div class="ai-bar">
