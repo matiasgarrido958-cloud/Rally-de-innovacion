@@ -136,7 +136,13 @@ window.LINEAMIENTOS = {
                 help: 'si = nombra a un grupo concreto de personas u organizaciones; no = SOLO si es totalmente genérico («la sociedad», «todos»); sin_datos = no se menciona.' },
             { id: 'evidencia', label: '¿Trae un dato o evidencia de que existe?',
                 options: ['si', 'no'],
-                help: 'si = menciona una cifra, un estudio, una fuente o una observación concreta; no = no menciona ninguna (no descarta el problema, solo avisa que hay que buscarla).' }
+                help: 'si = menciona una cifra, un estudio, una fuente o una observación concreta; no = no menciona ninguna (no descarta el problema, solo avisa que hay que buscarla).' },
+            { id: 'magnitud', label: '¿Dice a cuántos afecta, con una cifra?',
+                options: ['si', 'no'],
+                help: 'si = da una cantidad de personas, hogares u organizaciones afectadas (aunque sea estimada) o un porcentaje de una población concreta; no = no da ninguna cantidad (no descarta el problema, solo avisa que hay que buscarla).' },
+            { id: 'abordaje', label: '¿El abordaje ataca este problema?',
+                options: ['si', 'no', 'sin_datos'],
+                help: 'si = el abordaje dice qué parte del problema se atacará (una causa, una etapa o un grupo) y eso corresponde al problema escrito; no = el abordaje apunta a otro problema; sin_datos = no se escribió el abordaje.' }
         ],
         VERDICTS: [
             { id: 'ok', label: 'Alineado', color: 'var(--k-good)' },
@@ -161,15 +167,28 @@ window.LINEAMIENTOS = {
         { id: 'descartar', label: 'Descartar: ya existe igual', color: 'var(--k-bad)' }
     ],
 
-    // Criterios de evaluación del jurado, textuales de las bases 2026 (sección 12).
-    // Se puntúan 1–5 en la validación. La rúbrica detallada la entrega el Comité
-    // Ejecutivo a las sedes; no es pública.
+    // Criterios de evaluación del jurado (bases 2026, sección 12) con la rúbrica que
+    // mostró la sede para el video de 2 minutos: puntos y qué hay que demostrar.
+    // Se puntúan 1–5 en la validación y el total se lleva a 100 según los puntos.
+    // fields: campos de la idea que respaldan el criterio (la validación muestra si
+    // están completos). Presentación no salía en la foto de la rúbrica: 10 puntos es
+    // lo que falta para 100, hay que confirmarlo con la sede.
     CRITERIA: [
-        { id: 'innovacion', label: 'Grado de innovación de la solución propuesta' },
-        { id: 'impacto', label: 'Impacto positivo de la propuesta en la sociedad' },
-        { id: 'prefactibilidad', label: 'Prefactibilidad económica y social, y sustentabilidad ambiental' },
-        { id: 'viabilidad', label: 'Viabilidad técnica de la propuesta' },
-        { id: 'presentacion', label: 'La calidad de la presentación' }
+        { id: 'innovacion', label: 'Grado de innovación de la solución', short: 'Innovación', points: 30,
+            rubric: 'Explicar qué la diferencia de las alternativas existentes y qué valor aporta.',
+            fields: ['e_innovacion', 'f_alternativas', 'benchmark.differentiation'] },
+        { id: 'impacto', label: 'Impacto positivo en la sociedad', short: 'Impacto', points: 20,
+            rubric: 'Identificar a los beneficiarios y fundamentar cómo se aborda una problemática concreta.',
+            fields: ['b_problema', 'c_beneficiario', 'b_alcance', 'b_abordaje', 'g_efecto'] },
+        { id: 'prefactibilidad', label: 'Prefactibilidad económica y social, y sustentabilidad ambiental', short: 'Prefactibilidad', points: 20,
+            rubric: 'Considerar recursos, costos aproximados, aceptación social e implicancias ambientales.',
+            fields: ['j_recursos', 'f_costo_inicial', 'f_quien_paga', 'g_aceptacion', 'g_ambiental'] },
+        { id: 'viabilidad', label: 'Viabilidad técnica', short: 'Viabilidad', points: 20,
+            rubric: 'Sustentar el funcionamiento de la propuesta y sus posibilidades de implementación.',
+            fields: ['d_solucion', 'h_viabilidad', 'h_implementacion'] },
+        { id: 'presentacion', label: 'La calidad de la presentación', short: 'Presentación', points: 10,
+            rubric: 'Se evalúa en el video de 2 minutos (vista Pitch). Puntaje por confirmar con la sede.',
+            fields: [] }
     ],
 
     VALIDATION_TYPES: ['Entrevista', 'Encuesta corta', 'Mentor local', 'Mentor internacional', 'Dato / estudio', 'Otro'],
@@ -256,10 +275,10 @@ window.LINEAMIENTOS = {
 
     // Pitch de 2 minutos (sección 8). from/to en segundos.
     PITCH_BLOCKS: [
-        { id: 'gancho', label: 'Gancho y dolor', from: 0, to: 20, hint: 'Dato impactante o pregunta. Quién sufre el problema. Sin presentaciones largas.' },
-        { id: 'valor', label: 'Propuesta de valor', from: 20, to: 50, hint: 'Qué es la solución, cómo funciona, componente innovador. Mostrar prototipo o flujograma.' },
-        { id: 'modelo', label: 'Factibilidad y modelo', from: 50, to: 80, hint: 'Financiamiento, costos clave, por qué es viable y accesible frente a alternativas.' },
-        { id: 'impacto', label: 'Impacto y sustentabilidad', from: 80, to: 105, hint: 'Efecto en la comunidad o el medioambiente y cómo se mantiene a largo plazo.' },
+        { id: 'gancho', label: 'Gancho y dolor', from: 0, to: 20, hint: 'Dato impactante o pregunta. Quién sufre el problema y a cuántos afecta. Sin presentaciones largas.' },
+        { id: 'valor', label: 'Propuesta de valor', from: 20, to: 50, hint: 'Innovación (30 pts): qué la diferencia de las alternativas existentes y qué valor aporta. Mostrar prototipo o flujograma.' },
+        { id: 'modelo', label: 'Factibilidad y modelo', from: 50, to: 80, hint: 'Viabilidad técnica (20 pts): cómo funciona y cómo se implementa. Prefactibilidad (20 pts): recursos y costos aproximados.' },
+        { id: 'impacto', label: 'Impacto y sustentabilidad', from: 80, to: 105, hint: 'Impacto (20 pts): beneficiarios y cómo se aborda el problema. Aceptación social e implicancias ambientales.' },
         { id: 'cierre', label: 'Equipo y cierre', from: 105, to: 120, hint: 'Multidisciplinariedad en una frase. Cierre memorable.' }
     ],
     // Velocidad de lectura para estimar la duración (palabras por minuto).

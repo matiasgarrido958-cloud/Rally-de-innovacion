@@ -302,6 +302,12 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .score-big { font-size: 18px; color: var(--k-s4); }
 .filter-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .filter-row > span { flex: 1; min-width: 200px; }
+.rubric-row { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+.rubric-pts { font-size: 12px; font-weight: 700; color: var(--k-s4); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rubric-fields { display: flex; flex-wrap: wrap; gap: 6px; }
+.rubric-fields .chip { white-space: normal; text-align: left; }
+.rubric-fields .chip.ok { color: var(--k-good); }
+.rubric-fields .chip.missing { color: var(--k-bad); border-color: color-mix(in srgb, var(--k-bad) 35%, var(--mix)); }
 .filter-row > span .form-hint { display: block; margin-top: 2px; }
 .filter-row > .chip { flex: 0 0 auto; min-width: 0; }
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }

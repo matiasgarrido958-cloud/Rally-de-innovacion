@@ -228,7 +228,7 @@ function renderTemas() {
                     const score = ideaScore(d);
                     return `<div class="mini-card" data-idea="${escapeHtml(i.id)}" tabindex="0">
                         <span class="mono">${escapeHtml(i.id)}</span> ${escapeHtml(d.name || d.title || 'Sin título')}
-                        <div class="mini-tags">${chip(findOption(IDEA_ALL, d.status))}${score !== null ? `<span class="chip outline">★ ${score}</span>` : ''}</div>
+                        <div class="mini-tags">${chip(findOption(IDEA_ALL, d.status))}${score !== null ? `<span class="chip outline">${scoreLabel(d)}</span>` : ''}</div>
                     </div>`;
                 }).join('') : '<p class="form-hint">Sin ideas.</p>'}${discarded ? `<p class="form-hint">+ ${discarded} descartada(s)</p>` : ''}</div>
                 <div class="form-group"><label class="form-label">Observaciones</label>${inlineTextarea(notes, `notes.${t.id}`, { kind: 'setting', rows: 2, cls: 'small', placeholder: 'Duplicados, combinaciones, ángulos…' })}</div>

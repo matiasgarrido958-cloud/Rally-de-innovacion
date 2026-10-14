@@ -34,12 +34,15 @@ El proceso parte por el problema, no por la solución:
 1. **Desafíos** (vista *Desafíos*): el día de la apertura (H0) se cargan los desafíos tal como vienen en
    las bases (título, ONG o empresa, descripción, tema).
 2. **Problemas**: para cada desafío, el equipo plantea uno o más problemas o cuellos de botella (qué
-   falla, dónde y a quién; quién lo sufre; dato o evidencia). **Punto 1 de IA:** *Revisar problemas*
+   falla, dónde y a quién; quién lo sufre; **a cuántos impacta**, con cifra y fuente; dato o evidencia;
+   y **cómo lo abordaremos**: qué parte del problema se ataca, todavía sin la solución). **Punto 1 de IA:** *Revisar problemas*
    pide a Gemini si cada problema está dentro de su desafío, es concreto, identifica a quién afecta y
-   no es una solución disfrazada («falta una app…»). Veredicto: **Alineado**, **Revisar** o **No
+   no es una solución disfrazada («falta una app…»); además avisa si falta la cifra de a cuántos afecta o
+   si el abordaje no corresponde al problema. Veredicto: **Alineado**, **Revisar** o **No
    alineado** (reglas en `PROBLEM_CHECK` de `js/lineamientos.js`).
 3. **Ideas de solución**: desde cada problema, *+ Idea de solución* abre una idea nueva en el Banco con
-   el desafío, el problema, el beneficiario y el tema ya llenos (son los campos a y b de la ficha). Si
+   el desafío, el problema, a cuántos impacta, el abordaje, el beneficiario y el tema ya llenos (son los
+   campos a y b de la ficha). Si
    el problema no está Alineado, pide confirmar. **Punto 2 de IA:** en el Filtro rápido, Gemini revisa
    si la solución ataca ese problema dentro del desafío, junto con el resto de la matriz.
 
@@ -56,8 +59,8 @@ qué falta). Retroceder siempre se puede.
 | 1. Banco de ideas | Lluvia de ideas: idea en 1 línea, nombre, tema, beneficiario directo, responsable, notas | Idea, tema y beneficiario |
 | 2. Filtro rápido (fase 1) | Capa IA (Gemini llena tipo, beneficiario, quién paga, reporte y demo) y capa equipo (sabemos construirla, a quién validarla, datos públicos, prototipo en 15 h); semáforo de factibilidad en 15 h | Tipo elegido, semáforo verde o amarillo y el filtro todo en "Sí". Rojo o un "No": descartarla |
 | 3. Benchmark (fase 2) | Qué se hace en el mundo, investigado por el equipo (fuentes propias e IA gratuita con el prompt que arma la página): referentes con país, enlace y diferencia; tendencia; diferenciación; decisión | ≥2 referentes con nombre y diferencia, diferenciación escrita y decisión "Seguir" |
-| 4. Ficha de idea | Campos a–k de la ficha | a, b, c, d, e, costo inicial, quién paga, g y h |
-| 5. Validación | Validaciones (entrevista, encuesta, mentor…) con hallazgo y puntaje 1–5 en los criterios del jurado | ≥1 validación con hallazgo y todos los criterios puntuados |
+| 4. Ficha de idea | Campos a–k de la ficha; cada campo indica a qué criterio de la rúbrica aporta | a, b (con alcance y abordaje), c, d, e, costo inicial, quién paga, g (efecto, aceptación social, implicancias ambientales, sostenibilidad) y h (funcionamiento e implementación) |
+| 5. Validación | Validaciones (entrevista, encuesta, mentor…) con hallazgo y puntaje 1–5 por criterio de la rúbrica, llevado a 100 | ≥1 validación con hallazgo y todos los criterios puntuados |
 | 6. Elegida | — | — |
 
 Según el tipo, la idea muestra su **plan de trabajo**: maqueta 3D, materiales, fabricación, precio y
@@ -65,6 +68,15 @@ prueba de usuario si es producto; flujo del servicio, modelo de ingresos, costos
 y mockup si es servicio (ambos si es mixto). Con un botón se pasa al tablero de Tareas con su hora
 sugerida, sin duplicar. Las tarjetas muestran el tipo y el semáforo, y en Filtro y Benchmark se
 ordenan de la más factible a la menos.
+
+### Rúbrica del jurado
+
+La sede mostró la rúbrica del video de 2 minutos: **innovación 30**, **impacto 20**, **prefactibilidad 20**
+y **viabilidad técnica 20** puntos, cada uno con lo que hay que demostrar. La foto no mostraba la calidad
+de la presentación: se dejó en 10 (lo que falta para 100) y hay que confirmarlo. En Validación cada
+criterio se puntúa 1–5 y se lleva a sus puntos; debajo aparecen los campos de la idea que lo respaldan
+(✓ completo, ✗ falta). Las tarjetas muestran el puntaje como ★ 86/100. Puntos, descripciones y campos se
+editan en `CRITERIA` de `js/lineamientos.js`.
 
 Las ideas que no siguen se **descartan** con un motivo (no se borran) y se pueden restaurar. Solo
 desde *Descartadas* se pueden eliminar definitivamente. La página también avisa si una idea es de

@@ -1,7 +1,8 @@
 // Desafíos → Problemas → Ideas de solución.
 // 1. Los desafíos se cargan el día de la apertura (H0).
-// 2. Para cada desafío el equipo plantea problemas o cuellos de botella y Gemini
-//    revisa si están alineados con el desafío y bien planteados (punto 1 de IA).
+// 2. Para cada desafío el equipo plantea problemas o cuellos de botella: quién lo
+//    sufre, a cuántos impacta y cómo lo abordaremos, antes de pensar la solución.
+//    Gemini revisa si están alineados con el desafío y bien planteados (punto 1 de IA).
 // 3. De cada problema salen ideas de solución, que entran al Banco de ideas; ahí
 //    el Filtro rápido revisa si la solución ataca ese problema (punto 2 de IA).
 //
@@ -53,7 +54,7 @@ function challengeText(c) {
 
 function problemText(p) {
     if (!p) return '';
-    return [p.data.text, p.data.affected ? `Lo sufre: ${p.data.affected}.` : ''].filter(Boolean).join(' ');
+    return [p.data.text, p.data.affected ? `Lo sufre: ${p.data.affected}.` : '', p.data.reach ? `A cuántos impacta: ${p.data.reach}.` : ''].filter(Boolean).join(' ');
 }
 
 // Desafío y problema de una idea: el problema vinculado o, si no hay, lo escrito en la ficha (a y b).
@@ -75,6 +76,8 @@ function applyProblemLink(data) {
     const c = challengeById(p.data.desafio_id);
     data.a_desafio = c ? challengeText(c) : data.a_desafio;
     data.b_problema = p.data.text || data.b_problema;
+    data.b_alcance = p.data.reach || data.b_alcance;
+    data.b_abordaje = p.data.approach || data.b_abordaje;
     if (!String(data.beneficiary || '').trim() && p.data.affected) data.beneficiary = p.data.affected;
     if (!data.theme && c && c.data.theme) data.theme = c.data.theme;
 }
@@ -109,7 +112,9 @@ function problemInput(p) {
         desafio: challengeText(c),
         problema: p.data.text || '',
         quien_lo_sufre: p.data.affected || '',
-        evidencia: p.data.evidence || ''
+        a_cuantos_impacta: p.data.reach || '',
+        evidencia: p.data.evidence || '',
+        como_lo_abordaremos: p.data.approach || ''
     };
 }
 
@@ -239,8 +244,10 @@ function problemBlock(p) {
             ${inlineTextarea(p, 'text', { ...kind, rows: 2, cls: 'small', placeholder: 'Qué falla o qué cuesta, dónde y a quién (el cuello de botella, no la solución)' })}
             <div class="row-2">
                 <div class="form-group"><label class="form-label">Quién lo sufre</label>${inlineInput(p, 'affected', { ...kind, placeholder: 'Grupo concreto de personas u organizaciones' })}</div>
-                <div class="form-group"><label class="form-label">Dato o evidencia</label>${inlineInput(p, 'evidence', { ...kind, placeholder: 'Cifra, estudio, fuente u observación' })}</div>
+                <div class="form-group"><label class="form-label">A cuántos impacta</label>${inlineInput(p, 'reach', { ...kind, placeholder: 'Cifra y fuente: 12.000 hogares en Maipú (INE 2024)' })}</div>
             </div>
+            <div class="form-group"><label class="form-label">Dato o evidencia</label>${inlineInput(p, 'evidence', { ...kind, placeholder: 'Cifra, estudio, fuente u observación de que el problema existe' })}</div>
+            <div class="form-group"><label class="form-label">Cómo lo abordaremos</label>${inlineTextarea(p, 'approach', { ...kind, rows: 2, cls: 'small', placeholder: 'Qué parte del problema atacamos (una causa, una etapa o un grupo) y por qué. Todavía no la solución.' })}</div>
             ${problemCheckHtml(p)}
             <div class="ai-actions">
                 <button class="btn btn-ghost" data-action="check-problem" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.check ? 'Revisar de nuevo' : 'Revisar con Gemini'}</button>
@@ -285,7 +292,7 @@ function renderDesafios() {
         <div class="page-head">
             <div>
                 <h1>Desafíos</h1>
-                <p>1 · Desafíos (se cargan el día de la apertura) → 2 · Problemas (🤖 alineación con el desafío) → 3 · Ideas de solución (Banco de ideas)</p>
+                <p>1 · Desafío (se carga en la apertura) → 2 · Problema: quién lo sufre, a cuántos impacta y cómo lo abordaremos (🤖 revisión) → 3 · Idea de solución (Banco de ideas)</p>
             </div>
             <div class="page-head-actions">
                 <button class="btn btn-accent" data-action="add-challenge"><svg><use href="#i-plus"/></svg>Desafío</button>
@@ -335,7 +342,7 @@ registerView({
         },
         'add-problem': (el) => {
             const id = nextShortId(PRO_PREFIX, 'P');
-            saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: el.dataset.id, text: '', affected: '', evidence: '' }, nextPosition('setting')));
+            saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: el.dataset.id, text: '', affected: '', reach: '', evidence: '', approach: '' }, nextPosition('setting')));
         },
         'delete-challenge': (el) => deleteChallenge(el.dataset.id),
         'delete-problem': (el) => {

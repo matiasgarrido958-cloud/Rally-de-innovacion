@@ -10,7 +10,7 @@ const IDEA_STAGES = [
     { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: `Fase 1 en dos capas: Gemini responde lo que se deduce del texto y el equipo lo que la IA no puede saber; sale el semáforo en ${L.WORK_HOURS} h. Si falla, se descarta.` },
     { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Fase 2: qué se está haciendo en el mundo. El equipo investiga (con IA y fuentes propias) y decide si la idea tiene diferenciación.' },
     { id: 'ficha', label: 'Ficha de idea', color: 'var(--k-s3)', hint: 'Ficha a–k para cada idea que sigue viva.' },
-    { id: 'validacion', label: 'Validación', color: 'var(--k-s4)', hint: 'Entrevista, encuesta corta o mentor, y puntaje 1–5 según los criterios del jurado.' },
+    { id: 'validacion', label: 'Validación', color: 'var(--k-s4)', hint: 'Entrevista, encuesta corta o mentor, y puntaje según la rúbrica del jurado (sobre 100).' },
     { id: 'elegida', label: 'Elegida', color: 'var(--k-s5)', hint: 'La idea con la que el equipo va al reporte y al pitch.' }
 ];
 const IDEA_DISCARDED = { id: 'descartada', label: 'Descartadas', color: 'var(--k-neutral)', hint: 'Ideas que no siguieron, con su motivo. Se pueden restaurar.' };
@@ -20,6 +20,8 @@ const IDEA_ALL = [...IDEA_STAGES, IDEA_DISCARDED];
 const FICHA_FIELDS = [
     { id: 'a_desafio', label: 'a) Desafío que resuelve', required: true, rows: 2 },
     { id: 'b_problema', label: 'b) Problema (en 2 frases)', required: true, rows: 2 },
+    { id: 'b_alcance', label: 'b) A cuántos impacta (cifra y fuente)', required: true, input: true },
+    { id: 'b_abordaje', label: 'b) Cómo abordamos el problema', required: true, rows: 2, hint: 'Qué parte del problema atacamos y por qué.' },
     { id: 'c_beneficiario', label: 'c) Beneficiario directo y cómo lo validamos', required: true, rows: 2 },
     { id: 'd_solucion', label: 'd) Solución (qué es y cómo funciona)', required: true, rows: 3 },
     { id: 'e_innovacion', label: 'e) Componente innovador / disruptivo', required: true, rows: 2 },
@@ -30,10 +32,13 @@ const FICHA_FIELDS = [
         { id: 'f_alternativas', label: 'Alternativas existentes y por qué esta es más accesible', rows: 2 }
     ] },
     { group: 'g) Impacto y sustentabilidad', fields: [
-        { id: 'g_efecto', label: 'Efecto en la comunidad o el medioambiente', required: true, rows: 2 },
+        { id: 'g_efecto', label: 'Efecto en la comunidad (a quiénes y cuánto)', required: true, rows: 2 },
+        { id: 'g_aceptacion', label: 'Aceptación social (quién la usaría o apoyaría, y por qué)', required: true, rows: 2 },
+        { id: 'g_ambiental', label: 'Implicancias ambientales (positivas y negativas)', required: true, rows: 2 },
         { id: 'g_sostenibilidad', label: 'Cómo se mantiene en el tiempo sin el equipo', required: true, rows: 2 }
     ] },
-    { id: 'h_viabilidad', label: 'h) Viabilidad técnica', required: true, rows: 2 },
+    { id: 'h_viabilidad', label: 'h) Viabilidad técnica: cómo funciona', required: true, rows: 2 },
+    { id: 'h_implementacion', label: 'h) Posibilidades de implementación (etapas, quién, plazos, permisos)', required: true, rows: 2 },
     { id: 'i_riesgos', label: 'i) Riesgos y supuestos a validar', rows: 2 },
     { id: 'j_recursos', label: 'j) Recursos necesarios', rows: 2 },
     { id: 'k_fuentes', label: 'k) Evidencia / fuentes (APA)', rows: 3, hint: 'Incluye las citas de uso de IA: las bases lo exigen.' }
@@ -82,11 +87,34 @@ function nextIdeaId() {
     return `I-${String(max + 1).padStart(2, '0')}`;
 }
 
-// Promedio 1–5 de los criterios del jurado (null si falta alguno).
+// Puntaje según la rúbrica: cada criterio 1–5 se lleva a sus puntos (5 = todos).
+// Devuelve los puntos de los criterios ya puntuados (null si no hay ninguno).
+function scoredCriteria(data) {
+    return L.CRITERIA.filter(c => { const v = Number(data.scores[c.id]); return v >= 1 && v <= 5; });
+}
+
 function ideaScore(data) {
-    const values = L.CRITERIA.map(c => Number(data.scores[c.id])).filter(v => v >= 1 && v <= 5);
-    if (!values.length) return null;
-    return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+    const list = scoredCriteria(data);
+    if (!list.length) return null;
+    return Math.round(list.reduce((sum, c) => sum + Number(data.scores[c.id]) / 5 * c.points, 0));
+}
+
+function ideaScoreMax(data) {
+    return scoredCriteria(data).reduce((sum, c) => sum + c.points, 0);
+}
+
+function scoreLabel(data) {
+    const score = ideaScore(data);
+    return score === null ? '' : `★ ${score}/${ideaScoreMax(data)}`;
+}
+
+// Campos de la idea que respaldan cada criterio de la rúbrica.
+const FIELD_LABELS = { ...Object.fromEntries(FICHA_FLAT.map(f => [f.id, f.label])), 'benchmark.differentiation': 'Benchmark: qué nos diferencia' };
+const FIELD_CRITERION = {};
+L.CRITERIA.forEach(c => c.fields.forEach(f => { FIELD_CRITERION[f] = c; }));
+
+function criterionCoverage(data, c) {
+    return c.fields.map(f => ({ id: f, label: FIELD_LABELS[f] || f, done: Boolean(String(getPath(data, f) || '').trim()) }));
 }
 
 function filterFailures(data) {
@@ -341,7 +369,7 @@ const TEST_DATA = [
     { title: 'Gestión de residuos en comunas urbanas', org: 'ONG Ciudad Limpia', theme: 'sustentabilidad',
         description: 'Reducir los residuos que llegan a vertederos desde barrios residenciales.',
         problems: [
-            { text: 'Los residuos orgánicos de las juntas de vecinos terminan en el vertedero porque no tienen dónde tratarlos.', affected: 'Juntas de vecinos de comunas con alto volumen de basura', evidence: 'Más de la mitad de la basura domiciliaria es orgánica',
+            { text: 'Los residuos orgánicos de las juntas de vecinos terminan en el vertedero porque no tienen dónde tratarlos.', affected: 'Juntas de vecinos de comunas con alto volumen de basura', reach: '40 juntas de vecinos de una comuna (cifra de prueba)', approach: 'Atacar la falta de un lugar de tratamiento cercano, no el hábito de separar.', evidence: 'Más de la mitad de la basura domiciliaria es orgánica',
                 ideas: [['Compostera comunitaria con medición de residuos', 'Fondo concursable municipal de reciclaje'], ['App de recetas saludables', ''], ['Retiro en bicicleta de orgánicos para compostaje', 'La municipalidad paga por kilo desviado']] },
             { text: 'Falta una app de reciclaje.', affected: 'Todos', evidence: '',
                 ideas: [['Plataforma para mejorar la sociedad', ''], ['Juego educativo sobre reciclaje para niños', '']] }
@@ -349,7 +377,7 @@ const TEST_DATA = [
     { title: 'Acceso a agua en zonas de sequía', org: 'Fundación Agua Viva', theme: 'sustentabilidad',
         description: 'Mejorar el acceso a agua segura en comunidades afectadas por la sequía.',
         problems: [
-            { text: 'Las escuelas rurales de Coquimbo dependen de camiones aljibe y el agua llega con baja calidad.', affected: 'Estudiantes de escuelas rurales de la región de Coquimbo', evidence: 'Reportes de la DGA sobre camiones aljibe',
+            { text: 'Las escuelas rurales de Coquimbo dependen de camiones aljibe y el agua llega con baja calidad.', affected: 'Estudiantes de escuelas rurales de la región de Coquimbo', reach: 'Unas 200 escuelas rurales (cifra de prueba)', evidence: 'Reportes de la DGA sobre camiones aljibe',
                 ideas: [['Filtro de agua de bajo costo para escuelas rurales', 'Ministerio de Educación vía programa de infraestructura'], ['Biofiltro de aguas grises para viviendas sociales', 'Subsidio habitacional del MINVU'], ['Marketplace de ropa usada entre universitarios', 'Comisión del 10% por venta']] },
             { text: 'Las plazas municipales se riegan de más en verano por falta de control.', affected: 'Municipios con áreas verdes en zonas de sequía', evidence: '',
                 ideas: [['Sensor de humedad para riego de plazas municipales', 'Lo paga el municipio con fondos de áreas verdes'], ['Mapa colaborativo de puntos de agua potable gratis', 'Patrocinio de marcas deportivas']] }
@@ -357,7 +385,7 @@ const TEST_DATA = [
     { title: 'Envejecimiento activo y seguro', org: 'Fundación Mayores', theme: 'bienestar',
         description: 'Mejorar la seguridad y autonomía de las personas mayores.',
         problems: [
-            { text: 'Los adultos mayores que viven solos pueden pasar horas en el suelo tras una caída sin que nadie lo sepa.', affected: 'Adultos mayores que viven solos', evidence: 'Las caídas son la principal causa de lesiones en mayores de 65',
+            { text: 'Los adultos mayores que viven solos pueden pasar horas en el suelo tras una caída sin que nadie lo sepa.', affected: 'Adultos mayores que viven solos', reach: 'Medio millón de mayores de 65 que viven solos en Chile (cifra de prueba)', approach: 'Reducir el tiempo entre la caída y el aviso, no prevenir la caída.', evidence: 'Las caídas son la principal causa de lesiones en mayores de 65',
                 ideas: [['Pulsera que avisa caídas de adultos mayores que viven solos', 'La pagan los hijos con suscripción mensual'], ['Detector de fugas de gas para cocinas de casas antiguas', 'Venta directa a 25 mil pesos'], ['Algo con inteligencia artificial', '']] },
             { text: 'La salud.', affected: '', evidence: '',
                 ideas: [['Sistema nacional de salud digital integrado para todo Chile', 'El Estado']] }
@@ -367,7 +395,7 @@ const TEST_DATA = [
         problems: [
             { text: 'Las personas en silla de ruedas no saben qué veredas y estaciones del centro son accesibles hasta que llegan.', affected: 'Usuarios de silla de ruedas en el centro de Santiago', evidence: '',
                 ideas: [['App de rutas accesibles para personas en silla de ruedas', ''], ['Techo verde modular para paraderos de micro', 'Concesión de publicidad en el paradero']] },
-            { text: 'Los migrantes no entienden los trámites municipales y pierden horas o beneficios.', affected: 'Migrantes que hacen trámites en municipalidades', evidence: 'Encuesta municipal de atención',
+            { text: 'Los migrantes no entienden los trámites municipales y pierden horas o beneficios.', affected: 'Migrantes que hacen trámites en municipalidades', reach: '3.000 atenciones al mes en una municipalidad (cifra de prueba)', approach: 'Atacar la comprensión del trámite antes de ir a la ventanilla.', evidence: 'Encuesta municipal de atención',
                 ideas: [['Bot que traduce trámites municipales a lenguaje simple', 'Lo contrata la municipalidad'], ['Plataforma de voluntariado', ''], ['Paneles solares plegables para ferias libres', '']] }
         ] }
 ];
@@ -383,7 +411,7 @@ async function createTestIdeas() {
         await saveItem(makeItem(`${DES_PREFIX}${cid}`, 'setting', { title: `${TEST_PREFIX} ${c.title}`, org: c.org, description: c.description, theme: c.theme }, nextPosition('setting')), { rerender: false });
         for (const p of c.problems) {
             const pid = nextShortId(PRO_PREFIX, 'P');
-            await saveItem(makeItem(`${PRO_PREFIX}${pid}`, 'setting', { desafio_id: cid, text: p.text, affected: p.affected, evidence: p.evidence, test: true }, nextPosition('setting')), { rerender: false });
+            await saveItem(makeItem(`${PRO_PREFIX}${pid}`, 'setting', { desafio_id: cid, text: p.text, affected: p.affected, reach: p.reach || '', evidence: p.evidence, approach: p.approach || '', test: true }, nextPosition('setting')), { rerender: false });
             for (const [title, notes] of p.ideas) {
                 const data = { ...blankIdeaData(), title, name: `${TEST_PREFIX} ${++n}`, notes, problem_id: pid };
                 applyProblemLink(data);
@@ -608,7 +636,7 @@ function ideaCard(item) {
             ${data.status === 'descartada' ? `<button class="card-delete" data-action="delete-idea" data-id="${escapeHtml(item.id)}" aria-label="Eliminar definitivamente" title="Eliminar definitivamente"><svg><use href="#i-trash"/></svg></button>` : ''}
             <div class="card-top">
                 <span class="card-id">${escapeHtml(item.id)}</span>
-                ${score !== null ? `<span class="chip outline score" title="Promedio de los criterios del jurado">★ ${score}</span>` : ''}
+                ${score !== null ? `<span class="chip outline score" title="Puntaje según la rúbrica del jurado">${scoreLabel(data)}</span>` : ''}
             </div>
             <div class="card-title ${data.title ? '' : 'untitled'}">${escapeHtml(data.name || data.title) || 'Sin título'}</div>
             ${data.name && data.title ? `<div class="card-sub">${escapeHtml(data.title)}</div>` : ''}
@@ -724,6 +752,8 @@ function sectionIdea(d, open) {
         ${field('a_desafio', 'Desafío', d.a_desafio, { placeholder: 'Se llena al elegir el problema' })}
         ${field('b_problema', 'Problema / cuello de botella', d.b_problema, { textarea: true, required: !p, placeholder: 'Qué falla, dónde y a quién' })}
         ${field('beneficiary', 'Beneficiario directo', d.beneficiary, { required: true, placeholder: 'Quién, específicamente' })}
+        ${field('b_alcance', 'A cuántos impacta', d.b_alcance, { placeholder: 'Se llena desde el problema: cifra y fuente' })}
+        ${field('b_abordaje', 'Cómo abordamos el problema', d.b_abordaje, { textarea: true, placeholder: 'Se llena desde el problema: qué parte atacamos y por qué' })}
         ${field('title', 'Idea de solución (1 línea)', d.title, { required: true, placeholder: 'Qué proponemos, en una frase' })}
         <div class="row-2">
             ${field('name', 'Nombre (opcional)', d.name, { placeholder: 'Nombre de fantasía' })}
@@ -1053,7 +1083,11 @@ async function copyText(text, boxId) {
 }
 
 function sectionFicha(d, open) {
-    const render = f => field(f.id, f.label, d[f.id], { textarea: !f.input, rows: f.rows || 2, required: f.required, hint: f.hint || '' });
+    const render = f => {
+        const c = FIELD_CRITERION[f.id];
+        const hint = [f.hint, c ? `Rúbrica: ${c.short} (${c.points} pts)` : ''].filter(Boolean).join(' · ');
+        return field(f.id, f.label, d[f.id], { textarea: !f.input, rows: f.rows || 2, required: f.required, hint });
+    };
     return fold('4 · Ficha de idea', open, FICHA_FIELDS.map(f => f.group
         ? `<div class="subgroup"><div class="subgroup-title">${escapeHtml(f.group)}</div>${f.fields.some(x => x.input) ? `<div class="row-2">${f.fields.filter(x => x.input).map(render).join('')}</div>` : ''}${f.fields.filter(x => !x.input).map(render).join('')}</div>`
         : render(f)).join(''), ideaRequirements(d, 'validacion').length === 0, 'ficha');
@@ -1078,18 +1112,31 @@ function validationRow(v, index) {
         </div>`;
 }
 
+function rubricRow(d, c) {
+    const coverage = criterionCoverage(d, c);
+    const value = Number(d.scores[c.id]);
+    const pts = value >= 1 && value <= 5 ? Math.round(value / 5 * c.points) : null;
+    return `
+        <div class="rubric-row">
+            <div class="filter-row">
+                <span><strong>${escapeHtml(c.label)}</strong> <span class="rubric-pts">${pts !== null ? `${pts}/` : ''}${c.points} pts</span>
+                    <span class="form-hint">${escapeHtml(c.rubric)}</span></span>
+                ${pills(`scores.${c.id}`, [1, 2, 3, 4, 5].map(n => ({ id: String(n), label: String(n), color: 'var(--k-s4)' })), String(d.scores[c.id] || ''))}
+            </div>
+            ${coverage.length ? `<div class="rubric-fields">${coverage.map(f => `<span class="chip outline ${f.done ? 'ok' : 'missing'}" title="${f.done ? 'Completo' : 'Falta completarlo'}">${f.done ? '✓' : '✗'} ${escapeHtml(f.label)}</span>`).join('')}</div>` : ''}
+        </div>`;
+}
+
 function sectionValidation(d, open) {
-    const score = ideaScore(d);
+    const label = scoreLabel(d);
+    const total = L.CRITERIA.reduce((sum, c) => sum + c.points, 0);
     return fold('5 · Validación y puntaje', open, `
         <div class="rows">${d.validations.map(validationRow).join('')}</div>
         <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-validation"><svg><use href="#i-plus"/></svg>Agregar validación</button>
         <div class="subgroup">
-            <div class="subgroup-title">Puntaje 1–5 por criterio del jurado ${score !== null ? `<span class="score-big">★ ${score}</span>` : ''}</div>
-            ${L.CRITERIA.map(c => `
-                <div class="filter-row">
-                    <span>${escapeHtml(c.label)}</span>
-                    ${pills(`scores.${c.id}`, [1, 2, 3, 4, 5].map(n => ({ id: String(n), label: String(n), color: 'var(--k-s4)' })), String(d.scores[c.id] || ''))}
-                </div>`).join('')}
+            <div class="subgroup-title">Rúbrica del jurado (video de 2 min, ${total} pts) ${label ? `<span class="score-big">${label}</span>` : ''}</div>
+            <p class="form-hint">Puntúen 1–5 cada criterio; se lleva a sus puntos (5 = todos). Debajo, los campos de la idea que lo respaldan: ✗ = falta y el jurado no lo va a ver.</p>
+            ${L.CRITERIA.map(c => rubricRow(d, c)).join('')}
         </div>
     `, ideaRequirements(d, 'elegida').length === 0, 'validacion');
 }
