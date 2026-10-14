@@ -110,7 +110,8 @@ async function handle(req: Request) {
 
     const key = Deno.env.get('GEMINI_API_KEY');
     if (!key) return json({ error: 'Falta el secret GEMINI_API_KEY en Supabase.' }, 500);
-    const model = Deno.env.get('GEMINI_MODEL') || DEFAULT_MODEL;
+    // Tolera valores pegados con espacios, comillas o el prefijo "models/".
+    const model = (Deno.env.get('GEMINI_MODEL') || '').trim().replace(/^["']|["']$/g, '').replace(/^models\//, '').trim() || DEFAULT_MODEL;
 
     let body: Record<string, unknown>;
     try {
