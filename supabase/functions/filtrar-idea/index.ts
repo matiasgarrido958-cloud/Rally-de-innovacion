@@ -5,22 +5,64 @@
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  clave de Google AI Studio (https://aistudio.google.com/apikey)
-//   GEMINI_MODELS   opcional; modelos en orden, separados por comas, p. ej.
-//                   gemini-3.8-flash,gemini-3.8-flash-lite. Si uno está saturado, sin
-//                   cuota o no existe para la clave, se usa el siguiente (la cuota
-//                   gratuita es por modelo). GEMINI_MODEL (uno solo) también sirve.
-//                   Por defecto: gemini-3.8-flash.
+//   GEMINI_MODELS   opcional; modelos preferidos en orden, separados por comas.
+//                   Sin esto, la función detecta sola los modelos Gemini disponibles
+//                   para la clave y los ordena (flash, luego lite, luego pro; versión
+//                   más nueva primero). Si uno está saturado, sin cuota o falla, usa
+//                   el siguiente: la cuota gratuita es por modelo.
 // Deja activado "Verify JWT": solo usuarios con sesión en el workspace pueden usarla.
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
+const MAX_MODELS_PER_REQUEST = 8;
+const DISCOVERY_TTL_MS = 60 * 60 * 1000;
+let discovered: { at: number; models: string[] } | null = null;
+
 // Tolera valores pegados con espacios, comillas o el prefijo "models/".
-function modelList() {
+function cleanModel(m: string) {
+    return m.trim().replace(/^["']|["']$/g, '').replace(/^models\//, '').trim();
+}
+
+function preferredModels() {
     const raw = Deno.env.get('GEMINI_MODELS') || Deno.env.get('GEMINI_MODEL') || '';
-    const list = raw.split(/[,\n]/)
-        .map(m => m.trim().replace(/^["']|["']$/g, '').replace(/^models\//, '').trim())
-        .filter(Boolean);
-    return list.length ? [...new Set(list)] : [DEFAULT_MODEL];
+    return raw.split(/[,\n]/).map(cleanModel).filter(Boolean);
+}
+
+// Orden: flash, lite, otros, pro; estables antes que preview; versión más nueva primero.
+function modelRank(name: string) {
+    const tier = /flash-lite|lite/.test(name) ? 1 : /flash/.test(name) ? 0 : /pro/.test(name) ? 3 : 2;
+    const preview = /preview|exp/.test(name) ? 1 : 0;
+    const version = parseFloat((name.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || '0');
+    return { tier, preview, version };
+}
+
+// Lista los modelos Gemini de texto disponibles para la clave (con caché de 1 hora).
+async function discoverModels(key: string) {
+    if (discovered && Date.now() - discovered.at < DISCOVERY_TTL_MS) return discovered.models;
+    try {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000', { headers: { 'x-goog-api-key': key } });
+        if (!response.ok) return [];
+        const data = await response.json();
+        const models = (data.models || [])
+            .filter((m: { name?: string; supportedGenerationMethods?: string[] }) =>
+                (m.supportedGenerationMethods || []).includes('generateContent'))
+            .map((m: { name: string }) => cleanModel(m.name))
+            .filter((name: string) => /^gemini-/.test(name) && !/embed|image|tts|audio|live|aqa|computer|robotics|veo|imagen/.test(name))
+            .sort((x: string, y: string) => {
+                const a = modelRank(x), b = modelRank(y);
+                return a.tier - b.tier || a.preview - b.preview || b.version - a.version || x.localeCompare(y);
+            });
+        discovered = { at: Date.now(), models };
+        return models;
+    } catch {
+        return [];
+    }
+}
+
+async function modelList(key: string) {
+    const list = [...preferredModels(), ...await discoverModels(key)];
+    if (!list.length) list.push(DEFAULT_MODEL);
+    return [...new Set(list)].slice(0, MAX_MODELS_PER_REQUEST);
 }
 
 type Attempt = { ok: true; raw: Record<string, Record<string, unknown>> } | { ok: false; status: number; detail: string; next: boolean };
@@ -37,8 +79,9 @@ async function askModel(model: string, key: string, prompt: string, schema: unkn
     const text = await response.text();
     if (!response.ok) {
         // Saturado, sin cuota, caído o modelo inexistente para esta clave: probar el siguiente.
+        // Un 400 que no es de la clave (p. ej. un modelo que no acepta el formato JSON) también.
         const modelProblem = [404, 429, 500, 503, 504].includes(response.status)
-            || (response.status === 400 && /model/i.test(text));
+            || (response.status === 400 && !/api[ _]?key/i.test(text));
         return { ok: false, status: response.status, detail: text.slice(0, 300), next: modelProblem };
     }
     try {
@@ -168,7 +211,7 @@ async function handle(req: Request) {
     const failures: { model: string; status: number; detail: string }[] = [];
     let raw: Record<string, Record<string, unknown>> | null = null;
     let model = '';
-    for (const candidate of modelList()) {
+    for (const candidate of await modelList(key)) {
         const attempt = await askModel(candidate, key, prompt, schema);
         if (attempt.ok) {
             raw = attempt.raw;
@@ -181,7 +224,7 @@ async function handle(req: Request) {
     if (!raw) {
         const summary = failures.map(f => `${f.model}: ${f.status}`).join(', ');
         if (failures.every(f => f.status === 429)) {
-            return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto o agrega otro modelo a GEMINI_MODELS.` }, 429);
+            return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto y vuelve a intentar.` }, 429);
         }
         if (failures.some(f => [429, 503, 504].includes(f.status))) {
             return json({ error: `Gemini respondió 503: todos los modelos están saturados o sin cuota (${summary}).` }, 503);
