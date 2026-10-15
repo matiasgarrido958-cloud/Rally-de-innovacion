@@ -5,6 +5,8 @@
 // Con mode: 'correlacionar' recibe varias ideas y devuelve grupos de ideas
 // relacionadas con una propuesta combinada para cada uno (la página la muestra y
 // el equipo decide si crea el bloque nuevo; las ideas originales no se tocan).
+// Con mode: 'extraer' recibe una tarea, insumos de texto y los campos a devolver
+// (resumen de desafíos, clasificación de problemas, matriz del benchmark).
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  clave de Google AI Studio (https://aistudio.google.com/apikey)
@@ -233,6 +235,7 @@ async function handle(req: Request) {
         return json({ error: 'Cuerpo inválido' }, 400);
     }
     if (body.mode === 'correlacionar') return correlate(key, body);
+    if (body.mode === 'extraer') return extract(key, body);
 
     const questions = cleanQuestions(body.questions);
     const idea: Record<string, string> = {};
@@ -288,7 +291,7 @@ function correlationPrompt(list: { id: string; campos: Record<string, string> }[
     const ideas = list.map(i => `### ${i.id}\n${Object.entries(i.campos).filter(([, v]) => v.trim()).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`).join('\n\n');
     const task = selection
         ? `El equipo eligió estas ${list.length} ideas para combinarlas. Devuelve UN solo grupo con todas sus ids y una propuesta que las combine. Si de verdad no tienen ninguna relación útil, devuelve "grupos" vacío y explica por qué en "comentario".`
-        : `Busca grupos de 2 o más ideas que tengan una relación real: son la misma idea con otras palabras (duplicada), se complementan y juntas resuelven mejor el problema (complementaria), atacan el mismo problema (mismo_problema) o el mismo beneficiario (mismo_beneficiario). Una idea puede estar en un solo grupo. No fuerces relaciones: si no hay, devuelve "grupos" vacío. Máximo 6 grupos, del más claro al menos claro.`;
+        : `Busca grupos de 2 o más ideas con una similitud de 40% o más: son la misma idea con otras palabras (duplicada), se complementan y juntas resuelven mejor el problema (complementaria), atacan el mismo problema (mismo_problema) o el mismo beneficiario (mismo_beneficiario). Incluye también los grupos que se parecen pero NO conviene fusionar. Una idea puede estar en un solo grupo. No fuerces relaciones: si no hay, devuelve "grupos" vacío. Máximo 8 grupos, del más similar al menos similar.`;
     return `Ayudas a un equipo universitario de ingeniería en el Rally Latinoamericano de Innovación (competencia de 28 horas en Chile). Tienen ideas de solución en la etapa «${stage}».
 
 ${task}
@@ -297,7 +300,10 @@ Para cada grupo:
 - "ids": las ids de las ideas del grupo, tal como aparecen.
 - "tipo": duplicada, complementaria, mismo_problema, mismo_beneficiario u otra.
 - "relacion": en una frase, qué las une.
-- "propuesta": una idea combinada que tome lo mejor de cada una, sin inventar datos que no estén en las ideas: "titulo" (la solución en una frase), "nombre" (corto, opcional), "beneficiario" (concreto), "problema" (el problema que ataca), "descripcion" (qué es y cómo funciona, máximo 60 palabras) y "por_que" (por qué combinada es más fuerte que por separado, una frase).
+- "similitud": porcentaje entero de 0 a 100 de qué tan parecidas son (100 = la misma idea).
+- "fusionar": "si" si se complementan y juntas hacen una propuesta mejor que por separado; "no" si se parecen pero no se complementan (compiten, se contradicen o fusionarlas no suma nada).
+- "analisis": en máximo 25 palabras, por qué conviene o no fusionarlas. Rápido, preciso y conciso.
+- "propuesta": solo si "fusionar" es "si" (si es "no", deja todos sus textos vacíos): una idea combinada que tome lo mejor de cada una, sin inventar datos que no estén en las ideas: "titulo" (la solución en una frase), "nombre" (corto, opcional), "beneficiario" (concreto), "problema" (el problema que ataca), "descripcion" (qué es y cómo funciona, máximo 60 palabras) y "por_que" (por qué combinada es más fuerte que por separado, una frase).
 Además, "comentario": una frase general sobre lo que encontraste.
 
 Ideas:
@@ -310,8 +316,11 @@ function correlationSchema() {
     const proposal = { type: 'OBJECT', properties: Object.fromEntries(PROPOSAL_KEYS.map(k => [k, text])), required: ['titulo', 'beneficiario', 'problema', 'descripcion', 'por_que'] };
     const group = {
         type: 'OBJECT',
-        properties: { ids: { type: 'ARRAY', items: text }, tipo: { type: 'STRING', enum: RELATION_TYPES }, relacion: text, propuesta: proposal },
-        required: ['ids', 'tipo', 'relacion', 'propuesta']
+        properties: {
+            ids: { type: 'ARRAY', items: text }, tipo: { type: 'STRING', enum: RELATION_TYPES }, relacion: text,
+            similitud: { type: 'INTEGER' }, fusionar: { type: 'STRING', enum: ['si', 'no'] }, analisis: text, propuesta: proposal
+        },
+        required: ['ids', 'tipo', 'relacion', 'similitud', 'fusionar', 'analisis', 'propuesta']
     };
     return { type: 'OBJECT', properties: { grupos: { type: 'ARRAY', items: group }, comentario: text }, required: ['grupos', 'comentario'] };
 }
@@ -335,15 +344,69 @@ async function correlate(key: string, body: Record<string, unknown>) {
     // Solo ids enviadas, sin repetir una idea en dos grupos, y grupos de 2 o más.
     const known = new Set(list.map(i => i.id));
     const used = new Set<string>();
-    const grupos: { ids: string[]; tipo: string; relacion: string; propuesta: Record<string, string> }[] = [];
+    const grupos: { ids: string[]; tipo: string; relacion: string; similitud: number; fusionar: boolean; analisis: string; propuesta: Record<string, string> }[] = [];
     for (const g of (Array.isArray(raw.grupos) ? raw.grupos : []) as Record<string, unknown>[]) {
         const ids = [...new Set((Array.isArray(g.ids) ? g.ids : []).map(String))].filter(id => known.has(id) && !used.has(id));
         const p = (g.propuesta || {}) as Record<string, unknown>;
         const propuesta = Object.fromEntries(PROPOSAL_KEYS.map(k => [k, clip(p[k], 800)]));
-        if (ids.length < 2 || !propuesta.titulo.trim()) continue;
+        // Fusionar solo si hay propuesta; si no, el grupo se informa igual (similitud y análisis).
+        const fusionar = g.fusionar === 'si' && Boolean(propuesta.titulo.trim());
+        if (ids.length < 2) continue;
         ids.forEach(id => used.add(id));
-        grupos.push({ ids, tipo: RELATION_TYPES.includes(String(g.tipo)) ? String(g.tipo) : 'otra', relacion: clip(g.relacion, 300), propuesta });
-        if (grupos.length >= 6) break;
+        const similitud = Math.max(0, Math.min(100, Math.round(Number(g.similitud) || 0)));
+        grupos.push({
+            ids, tipo: RELATION_TYPES.includes(String(g.tipo)) ? String(g.tipo) : 'otra', relacion: clip(g.relacion, 300),
+            similitud, fusionar, analisis: clip(g.analisis, 300), propuesta
+        });
+        if (grupos.length >= 8) break;
     }
     return json({ grupos, comentario: clip(raw.comentario, 400), model });
+}
+
+// --- Extracción genérica: tarea + insumos → campos de texto ---
+
+const EXTRACT_MAX_INPUT = 60000;
+
+async function extract(key: string, body: Record<string, unknown>) {
+    const tarea = clip(body.tarea, 2000);
+    const campos = (Array.isArray(body.campos) ? body.campos : []).slice(0, 16)
+        .filter((c: Record<string, unknown>) => c && typeof c.id === 'string')
+        .map((c: Record<string, unknown>) => ({
+            id: clip(c.id, 40),
+            instruccion: clip(c.instruccion, 600),
+            opciones: Array.isArray(c.opciones) ? c.opciones.slice(0, 30).map(o => clip(o, 60)) : null
+        }));
+    const insumos: Record<string, string> = {};
+    let room = EXTRACT_MAX_INPUT;
+    Object.entries((body.insumos || {}) as Record<string, unknown>).slice(0, 20).forEach(([k, v]) => {
+        const text = clip(v, room);
+        room -= text.length;
+        insumos[clip(k, 60)] = text;
+    });
+    if (!tarea || !campos.length || !Object.values(insumos).some(v => v.trim())) return json({ error: 'Faltan la tarea, los campos o los insumos.' }, 400);
+
+    const prompt = `${tarea}
+
+Reglas:
+1. No inventes cifras, nombres, enlaces ni fuentes.
+2. Sé breve y concreto; respeta el largo que pide cada campo.
+3. En los campos con opciones, responde exactamente una de ellas.
+
+Campos que debes completar:
+${campos.map(c => `- ${c.id}: ${c.instruccion}${c.opciones ? ` Opciones: ${c.opciones.join(' | ')}` : ''}`).join('\n')}
+
+Insumos:
+${Object.entries(insumos).filter(([, v]) => v.trim()).map(([k, v]) => `### ${k}\n${v}`).join('\n\n')}`;
+    const properties = Object.fromEntries(campos.map(c => [c.id, c.opciones ? { type: 'STRING', enum: c.opciones } : { type: 'STRING' }]));
+    const schema = { type: 'OBJECT', properties, required: campos.map(c => c.id) };
+
+    const result = await runModels(key, prompt, schema,
+        { temperature: 0.2, modelTimeout: CORRELATE_MODEL_TIMEOUT_MS, budget: CORRELATE_BUDGET_MS });
+    if (result instanceof Response) return result;
+    const { raw, model } = result;
+    const out = Object.fromEntries(campos.map(c => {
+        const value = String(raw[c.id] ?? '');
+        return [c.id, c.opciones ? (c.opciones.includes(value) ? value : '') : clip(value, 3000)];
+    }));
+    return json({ campos: out, model });
 }

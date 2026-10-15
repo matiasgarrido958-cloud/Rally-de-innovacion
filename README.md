@@ -27,27 +27,38 @@ nada se sube después de H27.
 Las casillas de los checklists guardan quién las marcó y cuándo. Como la cuenta es compartida,
 cada persona escribe su nombre con el botón de usuario (arriba a la derecha) y ese navegador lo recuerda.
 
-## Desafíos → Problemas → Ideas de solución
+## Flujo lineal: 1 · Desafíos → 2 · Problemas → 3 · Soluciones
 
-El proceso parte por el problema, no por la solución:
+El proceso parte por el problema, no por la solución, y la IA hace el trabajo pesado:
 
-1. **Desafíos** (vista *Desafíos*): el día de la apertura (H0) se cargan los desafíos tal como vienen en
-   las bases (título, ONG o empresa, descripción, tema).
-2. **Problemas**: para cada desafío, el equipo plantea uno o más problemas o cuellos de botella (qué
-   falla, dónde y a quién; quién lo sufre; **a cuántos impacta**, con cifra y fuente; dato o evidencia;
-   y **cómo lo abordaremos**: qué parte del problema se ataca, todavía sin la solución). **Punto 1 de IA:** *Revisar problemas*
-   pide a Gemini si cada problema está dentro de su desafío, es concreto, identifica a quién afecta y
-   no es una solución disfrazada («falta una app…»); además avisa si falta la cifra de a cuántos afecta o
-   si el abordaje no corresponde al problema. Veredicto: **Alineado**, **Revisar** o **No
-   alineado** (reglas en `PROBLEM_CHECK` de `js/lineamientos.js`).
-3. **Ideas de solución**: desde cada problema, *+ Idea de solución* abre una idea nueva en el Banco con
-   el desafío, el problema, a cuántos impacta, el abordaje, el beneficiario y el tema ya llenos (son los
-   campos a y b de la ficha). Si
-   el problema no está Alineado, pide confirmar. **Punto 2 de IA:** en el Filtro rápido, Gemini revisa
-   si la solución ataca ese problema dentro del desafío, junto con el resto de la matriz.
+1. **Desafíos** (pestaña *1 · Desafíos*): el día de la apertura se ingresan los desafíos (basta el
+   nombre; el texto de las bases es opcional). 🤖 *Resumir* pide a Gemini un resumen breve: de qué
+   trata, qué incluye, qué queda fuera, actores clave y palabras clave (`CHALLENGE_SUMMARY`).
+2. **Problemas** (pestaña *2 · Problemas*): cada uno anota la idea o problema que quiere abordar,
+   todavía sin solución. Cada tarjeta avanza por pasos numerados (solo queda abierto el que toca):
+   1. **Idea** y quién lo sufre.
+   2. **Desafío**: al salir del campo, Gemini la **clasifica sola** en el desafío que mejor calza, con
+      calce alto/medio/bajo y motivo (`PROBLEM_CLASSIFY`). Se puede cambiar a mano; entonces la
+      clasificación automática ya no lo pisa. La pestaña agrupa los problemas por desafío.
+   3. **Delimitación**: alcance (a cuántos y dónde), qué abordaremos, qué queda fuera, quién pagaría y
+      evidencia. Revisión opcional del planteamiento con Gemini (`PROBLEM_CHECK`).
+   4. **Benchmark del problema**: *Copiar prompt de investigación* (armado con el desafío y la
+      delimitación) → se pega en el modo investigador de Claude, ChatGPT, Gemini o Perplexity → se
+      pega el informe → 🤖 *Procesar informe* lo compacta en una **matriz estándar**: a cuántos afecta,
+      dónde, causas, quién paga hoy, qué se hace en el mundo, brechas, tendencia, normativa en Chile,
+      riesgos y fuentes (`PROBLEM_BENCHMARK`).
+   5. **Soluciones**: *+ Idea de solución* abre una idea en *3 · Soluciones* con el desafío, el
+      problema, el alcance, el abordaje, quién paga y el beneficiario ya llenos, y la matriz del
+      benchmark a la vista.
+3. **Soluciones** (pestaña *3 · Soluciones*): la lluvia de ideas. *Buscar correlaciones* (en Banco,
+   Filtro y Ficha) da el **% de similitud** de cada grupo y si conviene **fusionarlas** (se
+   complementan: propuesta combinada) o no (se parecen pero no suman). Luego Filtro rápido, Benchmark,
+   Ficha, Validación y Elegida.
 
 Desafíos y problemas se guardan en `rally_items` con kind `setting` e ids `set:des:DS-01` y
-`set:pro:P-01` (la tabla no admite otros tipos sin migración).
+`set:pro:P-01` (la tabla no admite otros tipos sin migración). Los resúmenes, la clasificación y la
+matriz usan el modo `extraer` de la Edge Function: si la página avisa que la función es «la versión
+anterior», hay que volver a pegar `supabase/functions/filtrar-idea/index.ts` en Supabase y desplegar.
 
 ## Flujo de ideas
 

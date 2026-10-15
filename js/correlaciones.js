@@ -1,4 +1,5 @@
-// Correlaciones entre ideas (solo en Ficha de idea).
+// Correlaciones entre ideas: justo después de la lluvia de ideas (Banco y Filtro) y en Ficha.
+// Cada grupo trae su % de similitud y si conviene fusionar (se complementan) o no.
 // «Buscar correlaciones» manda a Gemini las ideas de la etapa abierta; «Correlacionar
 // selección» solo las marcadas. Gemini propone grupos de ideas relacionadas con una
 // idea combinada; el equipo decide cuáles crear. El bloque nuevo entra en la etapa
@@ -6,7 +7,7 @@
 // salió (data.combined). Las ideas originales no se modifican.
 // Usa la misma Edge Function del filtro con mode: 'correlacionar'.
 
-const CORRELATION_STAGES = ['ficha'];
+const CORRELATION_STAGES = ['banco', 'filtro', 'ficha'];
 const CORRELATION_TIMEOUT_MS = 100000;
 const RELATION_LABELS = {
     duplicada: 'Duplicadas', complementaria: 'Complementarias', mismo_problema: 'Mismo problema',
@@ -218,19 +219,22 @@ function correlationGroupCard(g, index) {
     return `
         <article class="corr-card ${g.created ? 'done' : ''}">
             <div class="corr-head">
+                ${typeof g.similitud === 'number' ? `<span class="chip corr-pct" style="--c:${g.similitud >= 70 ? 'var(--k-good)' : g.similitud >= 50 ? 'var(--k-s4)' : 'var(--k-neutral)'}" title="Similitud según Gemini">${g.similitud}% similar</span>` : ''}
                 <span class="chip" style="--c:var(--k-t3)">${escapeHtml(RELATION_LABELS[g.tipo] || 'Relacionadas')}</span>
                 <span class="corr-sources">${sources}</span>
             </div>
             <p class="corr-relation">${escapeHtml(g.relacion)}</p>
-            <div class="corr-proposal">
+            ${g.fusionar === false ? `<div class="req warn"><strong>No conviene fusionar:</strong> ${escapeHtml(g.analisis || 'se parecen pero no se complementan.')}</div>`
+                : g.analisis ? `<div class="req ok"><strong>Se complementan:</strong> ${escapeHtml(g.analisis)}</div>` : ''}
+            ${g.fusionar === false ? '' : `<div class="corr-proposal">
                 <strong>${escapeHtml(p.nombre ? `${p.nombre}: ` : '')}${escapeHtml(p.titulo)}</strong>
                 ${p.problema ? `<span class="form-hint"><strong>Problema:</strong> ${escapeHtml(p.problema)}</span>` : ''}
                 ${p.beneficiario ? `<span class="form-hint"><strong>Beneficiario:</strong> ${escapeHtml(p.beneficiario)}</span>` : ''}
                 ${p.descripcion ? `<span class="form-hint">${escapeHtml(p.descripcion)}</span>` : ''}
                 ${p.por_que ? `<span class="form-hint"><strong>Por qué juntas:</strong> ${escapeHtml(p.por_que)}</span>` : ''}
-            </div>
+            </div>`}
             <div class="ai-actions">
-                ${g.created
+                ${g.fusionar === false ? `<button class="btn btn-ghost" data-action="corr-dismiss" data-index="${index}">Entendido</button>` : g.created
                     ? `<button class="btn btn-ghost" data-action="open-idea" data-id="${escapeHtml(g.created)}">✓ Creada como ${escapeHtml(g.created)} · abrir</button>`
                     : `<button class="btn btn-accent" data-action="corr-create" data-index="${index}">Crear bloque combinado</button>
                        <button class="btn btn-ghost" data-action="corr-dismiss" data-index="${index}">Ignorar</button>`}

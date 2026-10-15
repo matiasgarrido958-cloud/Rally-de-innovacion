@@ -151,6 +151,56 @@ window.LINEAMIENTOS = {
         ]
     },
 
+    // --- Flujo del problema (pestañas 1 y 2), con el modo «extraer» de la Edge Function ---
+    // Cada tarea manda a Gemini una instrucción, los insumos y los campos que debe
+    // devolver (instruccion = qué escribir; opciones = valores permitidos).
+
+    // 1 · Desafíos: resumen breve para entender el desafío aunque no se domine el tema.
+    CHALLENGE_SUMMARY: {
+        TASK: 'Eres asesor de un equipo universitario de ingeniería en el Rally Latinoamericano de Innovación 2026 (28 horas, Chile). Resume el desafío para que el equipo lo entienda en un minuto aunque no domine el tema. Puedes usar conocimiento general para explicar el contexto, pero no inventes cifras, nombres ni fuentes.',
+        FIELDS: [
+            { id: 'resumen', label: 'De qué trata', instruccion: 'Qué problema o necesidad aborda el desafío y para quién, en máximo 2 frases.' },
+            { id: 'incluye', label: 'Qué incluye', instruccion: 'Qué ámbitos o tipos de solución entran en el desafío (su delimitación), en 2 a 4 puntos cortos separados por " · ".' },
+            { id: 'no_incluye', label: 'Qué queda fuera', instruccion: 'Qué no cubre el desafío o qué sería salirse de él, en 1 a 3 puntos cortos separados por " · ". Si el texto no lo dice, deduce lo razonable.' },
+            { id: 'actores', label: 'Actores clave', instruccion: 'Quiénes sufren el problema y quiénes podrían pagar o implementar una solución, en una frase.' },
+            { id: 'palabras', label: 'Palabras clave', instruccion: 'De 5 a 8 palabras clave separadas por coma, útiles para clasificar ideas y buscar referentes.' }
+        ]
+    },
+
+    // 2 · Problemas: Gemini asigna solo el desafío que mejor calza con cada idea.
+    PROBLEM_CLASSIFY: {
+        TASK: 'Clasifica la idea o problema que propone un equipo del Rally en el desafío que mejor le corresponde, usando la lista de desafíos con sus resúmenes. Si encaja en varios, elige el más directo y nombra el otro como alternativo. Si no encaja en ninguno, elige "ninguno".',
+        FIELDS: [
+            { id: 'desafio', label: 'Desafío', instruccion: 'El id del desafío que mejor calza.' },
+            { id: 'calce', label: 'Calce', instruccion: 'Qué tan directo es el calce: alto (es el centro del desafío), medio (entra pero de forma parcial o indirecta) o bajo (apenas lo toca).', opciones: ['alto', 'medio', 'bajo'] },
+            { id: 'motivo', label: 'Motivo', instruccion: 'Por qué calza con ese desafío, en una frase de máximo 20 palabras.' },
+            { id: 'alternativo', label: 'Alternativo', instruccion: 'El id de un segundo desafío que también podría calzar, o "ninguno".' }
+        ],
+        LEVELS: [
+            { id: 'alto', label: 'Calce alto', color: 'var(--k-good)' },
+            { id: 'medio', label: 'Calce medio', color: 'var(--k-s4)' },
+            { id: 'bajo', label: 'Calce bajo', color: 'var(--k-bad)' }
+        ]
+    },
+
+    // 2 · Problemas, paso Benchmark: el informe de la IA investigadora se pega y Gemini lo
+    // compacta en esta matriz estándar (la misma para todos los problemas).
+    PROBLEM_BENCHMARK: {
+        TASK: 'Procesa uno o varios informes de investigación (benchmark) sobre un problema y extrae los puntos clave en un formato estándar y breve. Usa solo lo que dicen los informes: si algo no aparece, escribe "sin datos". Conserva las cifras con su fuente y año.',
+        FIELDS: [
+            { id: 'magnitud', label: 'A cuántos afecta', instruccion: 'Las cifras clave de cuántos afecta, con fuente y año (máximo 3).' },
+            { id: 'donde', label: 'Dónde ocurre', instruccion: 'Países o regiones donde el problema es relevante, destacando Chile y Latinoamérica.' },
+            { id: 'causas', label: 'Causas', instruccion: 'Las causas principales del problema (2 a 4, separadas por " · ").' },
+            { id: 'quien_paga', label: 'Quién paga hoy', instruccion: 'Quién financia o pagaría hoy soluciones a este problema (Estado, municipios, empresas, usuarios, fondos), con ejemplos si hay.' },
+            { id: 'soluciones', label: 'Qué se hace en el mundo', instruccion: 'De 3 a 6 soluciones existentes con nombre, país y qué hacen en una frase, separadas por " · ".' },
+            { id: 'brechas', label: 'Brechas y oportunidades', instruccion: 'Qué no resuelven bien las soluciones existentes: brechas u oportunidades para innovar (2 a 4, separadas por " · ").' },
+            { id: 'tendencia', label: 'Tendencia', instruccion: 'Si el tema está en crecimiento, estable o en baja, con el dato que lo respalda.' },
+            { id: 'normativa', label: 'Chile: normativa y programas', instruccion: 'Normativa, políticas, programas o fondos en Chile relacionados.' },
+            { id: 'riesgos', label: 'Riesgos y barreras', instruccion: 'Riesgos o barreras para implementar soluciones en Chile.' },
+            { id: 'fuentes', label: 'Fuentes clave', instruccion: 'Las 3 a 5 fuentes más importantes en formato APA abreviado, separadas por " · ".' }
+        ]
+    },
+
     // Benchmark (fase 2): lo hace el equipo con investigación propia y las IA que
     // quiera. La página arma el prompt para copiar y registra los referentes.
     BENCHMARK_AIS: ['Claude', 'ChatGPT', 'Gemini', 'Perplexity', 'Otra'],

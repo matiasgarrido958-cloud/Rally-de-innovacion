@@ -520,7 +520,7 @@ function triageBar(all) {
             <div class="ai-bar">
                 <div class="ai-bar-text">
                     <strong>Lluvia de ideas de solución</strong>
-                    <span class="form-hint">Cada idea ataca un problema de la vista Desafíos (botón «+ Idea de solución» en cada problema). Anoten todo sin evaluar; al terminar, mándenlas al Filtro rápido, donde Gemini revisa si la solución ataca el problema.${waiting ? ` ${waiting} idea(s) aún sin problema, solución, tema o beneficiario.` : ''}</span>
+                    <span class="form-hint">Cada idea ataca un problema de la pestaña 2 · Problemas (botón «+ Idea de solución» en cada problema). Anoten todo sin evaluar; al terminar, mándenlas al Filtro rápido, donde Gemini revisa si la solución ataca el problema.${waiting ? ` ${waiting} idea(s) aún sin problema, solución, tema o beneficiario.` : ''}</span>
                 </div>
                 <div class="ai-actions">
                     ${testMode() ? `<button class="btn btn-ghost" data-action="test-create">+ Datos de prueba</button>
@@ -677,7 +677,7 @@ function renderIdeasView() {
     return `
         <div class="page-head">
             <div>
-                <h1>Ideas</h1>
+                <h1>3 · Soluciones</h1>
                 <p>${all.length - discardedCount} activas · ${all.filter(x => x.data.status === 'elegida').length} elegida(s) · ${discardedCount} descartadas</p>
             </div>
             <div class="page-head-actions">
@@ -748,12 +748,13 @@ function sectionIdea(d, open) {
     return fold('1 · Problema e idea de solución', open, `
         ${combinedNotice(d)}
         <div class="form-group"><label class="form-label">Problema que ataca <span class="req-star">*</span>
-            <span class="form-hint inline">De la vista Desafíos${v ? ` · revisión: ${escapeHtml(v.label)}` : ''}</span></label>
+            <span class="form-hint inline">De la pestaña 2 · Problemas${v ? ` · revisión: ${escapeHtml(v.label)}` : ''}</span></label>
             <select class="form-select" data-draft="problem_id">
                 <option value="">${list.length ? 'Elegir problema…' : 'Aún no hay problemas: escríbelo abajo'}</option>
                 ${options}
             </select>
         </div>
+        ${p && p.data.bench ? `<details class="fold"><summary class="section-title">🔎 Benchmark del problema ${escapeHtml(shortId(p))}</summary><div class="section"><div class="bench-matrix">${L.PROBLEM_BENCHMARK.FIELDS.map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${escapeHtml(p.data.bench[f.id] || '—')}</span></div>`).join('')}</div></div></details>` : ''}
         ${field('a_desafio', 'Desafío', d.a_desafio, { placeholder: 'Se llena al elegir el problema' })}
         ${field('b_problema', 'Problema / cuello de botella', d.b_problema, { textarea: true, required: !p, placeholder: 'Qué falla, dónde y a quién' })}
         ${field('beneficiary', 'Beneficiario directo', d.beneficiary, { required: true, placeholder: 'Quién, específicamente' })}
@@ -1400,7 +1401,7 @@ function setupIdeaModal() {
 
 registerView({
     id: 'ideas',
-    label: 'Ideas',
+    label: '3 · Soluciones',
     order: 4,
     badge: () => {
         const n = ideas().filter(i => i.data.status !== 'descartada').length;
