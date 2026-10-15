@@ -50,10 +50,26 @@ El proceso parte por el problema, no por la solución, y la IA hace el trabajo p
    5. **Soluciones**: *+ Idea de solución* abre una idea en *3 · Soluciones* con el desafío, el
       problema, el alcance, el abordaje, quién paga y el beneficiario ya llenos, y la matriz del
       benchmark a la vista.
-3. **Soluciones** (pestaña *3 · Soluciones*): la lluvia de ideas. *Buscar correlaciones* (en Banco,
-   Filtro y Ficha) da el **% de similitud** de cada grupo y si conviene **fusionarlas** (se
-   complementan: propuesta combinada) o no (se parecen pero no suman). Luego Filtro rápido, Benchmark,
-   Ficha, Validación y Elegida.
+3. **Soluciones** (pestaña *3 · Soluciones*), en 5 etapas:
+   1. **Lluvia de ideas**: todas las soluciones, sin evaluar.
+   2. **Ordenar**: 🔗 *Buscar correlaciones* da el **% de similitud** y si conviene **fusionar**; 🤖 el
+      filtro eliminatorio (`AI_TRIAGE`) marca Pasa / Dudosa / No pasa; *Pasar finalistas* lleva al
+      Benchmark las mejores hasta **4** (o las marcadas con *Seleccionar*).
+   3. **Benchmark de la solución**: prompt → IA investigadora → informe → 🤖 **matriz de innovación**
+      con el Manual de Oslo 2018: tipo (producto o proceso de negocio), grado de novedad, soluciones
+      parecidas, diferenciación, ajustes, valor agregado, adaptable a Latinoamérica, TRL alcanzable
+      en 28 h, riesgos y fuentes (`SOLUTION_BENCHMARK`).
+   4. **Decisión**: el equipo responde 4 preguntas (sabemos construirla, a quién validar, datos,
+      prototipo en 15 h → semáforo) y 🤖 Gemini puntúa 1–5 cada criterio del jurado con los puntos de
+      la sede (`CRITERIA`: 30/20/20/20/10), más horas, encaje con el equipo (carreras de *Equipo*),
+      escalabilidad en Latinoamérica y qué la haría ganar (`DECISION_MATRIX`). La pestaña ordena por
+      puntaje; el líder elige con *Construir →*.
+   5. **Construir**: 🤖 *Prellenar la ficha* (solo campos vacíos, `FICHA_PREFILL`), validación con
+      personas, plan de trabajo y tareas.
+
+El botón **❔ ¿Cómo funciona?** de las pestañas 1, 2 y 3 muestra este flujo en una pantalla. La vista
+*Temas* se reemplazó por la agrupación por desafío de la pestaña 2. Las matrices piensan en Chile
+(`SEDE_COUNTRY`) y en el resto de Latinoamérica: el jurado valora soluciones adaptables a la región.
 
 Desafíos y problemas se guardan en `rally_items` con kind `setting` e ids `set:des:DS-01` y
 `set:pro:P-01` (la tabla no admite otros tipos sin migración). Los resúmenes, la clasificación y la

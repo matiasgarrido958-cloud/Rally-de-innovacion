@@ -7,7 +7,7 @@
 // salió (data.combined). Las ideas originales no se modifican.
 // Usa la misma Edge Function del filtro con mode: 'correlacionar'.
 
-const CORRELATION_STAGES = ['banco', 'filtro', 'ficha'];
+const CORRELATION_STAGES = ['banco', 'filtro'];
 const CORRELATION_TIMEOUT_MS = 100000;
 const RELATION_LABELS = {
     duplicada: 'Duplicadas', complementaria: 'Complementarias', mismo_problema: 'Mismo problema',

@@ -354,6 +354,24 @@ async function classifyProblem(p) {
     await saveItem({ ...fresh, data }, { rerender: false });
 }
 
+const PHMW = L.PROBLEM_HMW;
+
+function hmwInput(p) {
+    const c = challengeById(p.data.desafio_id);
+    const b = p.data.bench || {};
+    return {
+        desafio: c ? challengeBrief(c) : '',
+        problema: [p.data.text, p.data.affected && `Lo sufre: ${p.data.affected}`, p.data.approach && `Abordaremos: ${p.data.approach}`].filter(Boolean).join('. '),
+        benchmark: PBENCH.FIELDS.map(f => b[f.id] ? `${f.label}: ${b[f.id]}` : '').filter(Boolean).join('\n')
+    };
+}
+
+async function makeHmw(p) {
+    const result = await askGemini(PHMW, hmwInput(p));
+    const fresh = getItem(p.id) || p;
+    await saveItem({ ...fresh, data: { ...fresh.data, hmw: { ...result.campos, model: result.model, at: new Date().toISOString() } } }, { rerender: false });
+}
+
 function benchInput(p) {
     return { informes: p.data.bench_report || '' };
 }
@@ -379,21 +397,21 @@ function problemResearchPrompt(p) {
         ['Alcance (a cuántos y dónde)', d.reach], ['Qué abordaremos', d.approach], ['Qué queda fuera', d.out_of_scope],
         ['Quién pagaría', d.payer], ['Dato o evidencia', d.evidence]
     ].filter(([, v]) => String(v || '').trim()).map(([k, v]) => `- ${k}: ${v}`).join('\n');
-    return `Actúa como analista de vigilancia tecnológica y de mercado. Investiga en profundidad, con búsqueda web y fuentes reales, el PROBLEMA que describe un equipo universitario de ingeniería del Rally Latinoamericano de Innovación 2026 (Chile). Todavía no tienen solución: necesitan entender el problema y lo que ya existe.
+    return `Actúa como analista de vigilancia tecnológica y de mercado. Investiga en profundidad, con búsqueda web y fuentes reales, el PROBLEMA que describe un equipo universitario de ingeniería del Rally Latinoamericano de Innovación (sede ${L.SEDE_COUNTRY}). Todavía no tienen solución: necesitan entender el problema y lo que ya existe, en ${L.SEDE_COUNTRY} y en el resto de Latinoamérica, porque la solución debe poder adaptarse a varios países de la región.
 
 CONTEXTO
 ${lines}
 
 QUÉ NECESITO (una sección por punto)
-1. A cuántos afecta: cifras clave con fuente y año (Chile, Latinoamérica y mundo).
+1. A cuántos afecta: cifras clave con fuente y año (${L.SEDE_COUNTRY}, Latinoamérica y mundo).
 2. Dónde ocurre: países o regiones donde es relevante.
 3. Causas principales del problema.
 4. Quién paga hoy: quién financia soluciones (Estado, municipios, empresas, usuarios, fondos), con ejemplos.
 5. Qué se hace en el mundo: entre 5 y 8 soluciones existentes con nombre, país, enlace y qué hacen.
 6. Brechas y oportunidades: qué no resuelven bien esas soluciones.
 7. Tendencia: si el tema está en crecimiento, estable o en baja, con datos.
-8. Chile: normativa, políticas, programas o fondos relacionados.
-9. Riesgos y barreras para implementar soluciones en Chile.
+8. Normativa, políticas, programas o fondos relacionados en ${L.SEDE_COUNTRY} y en otros países de Latinoamérica.
+9. Riesgos y barreras para implementar soluciones en ${L.SEDE_COUNTRY} y en el resto de Latinoamérica.
 10. Fuentes en formato APA 7.
 
 REGLAS
@@ -508,9 +526,41 @@ function problemCard(p) {
                 <div class="ai-actions"><button class="btn btn-ghost" data-action="check-problem" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.check ? 'Revisar planteamiento de nuevo' : 'Revisar planteamiento (opcional)'}</button></div>`)}
             ${stepFold(p, s4, current, 'Benchmark del problema', benchHtml(p))}
             ${stepFold(p, s5, current, 'Soluciones (lluvia de ideas)', `
-                <p class="form-hint">Con el benchmark a la vista, propongan soluciones. Cada una entra a la pestaña 3 · Soluciones.</p>
-                <div class="ai-actions"><button class="btn btn-accent" data-action="idea-for-problem" data-id="${escapeHtml(id)}"><svg><use href="#i-plus"/></svg>Idea de solución${s5.linked ? ` (${s5.linked} en curso)` : ''}</button></div>`)}
+                ${p.data.hmw ? `<div class="bench-matrix">${['hmw1', 'hmw2', 'hmw3'].filter(k => p.data.hmw[k]).map(k => `<div class="hmw">💡 ${escapeHtml(p.data.hmw[k])}</div>`).join('')}</div>`
+                    : '<p class="form-hint">Generen las preguntas «¿Cómo podríamos…?» para enfocar la lluvia de ideas, o propongan soluciones directo.</p>'}
+                <div class="ai-actions">
+                    <button class="btn btn-ghost" data-action="hmw-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.hmw ? 'Otras preguntas' : 'Preguntas «¿Cómo podríamos…?»'}</button>
+                    <button class="btn btn-accent" data-action="idea-for-problem" data-id="${escapeHtml(id)}"><svg><use href="#i-plus"/></svg>Idea de solución${s5.linked ? ` (${s5.linked} en curso)` : ''}</button>
+                </div>`)}
         </div>`;
+}
+
+// --- ¿Cómo funciona? (una sola pantalla, en las pestañas 1, 2 y 3) ---
+
+let howToOpen = false;
+
+function toggleHowTo() {
+    howToOpen = !howToOpen;
+    render();
+}
+
+function howToButton() {
+    return `<button class="btn btn-ghost" data-action="howto" aria-expanded="${howToOpen}">❔ ${howToOpen ? 'Cerrar guía' : '¿Cómo funciona?'}</button>`;
+}
+
+function howToPanel() {
+    if (!howToOpen) return '';
+    const step = (n, title, items) => `<div class="howto-step"><div class="howto-n">${n}</div><div><strong>${title}</strong><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul></div></div>`;
+    return `
+        <section class="panel howto">
+            <div class="panel-head"><h2>Cómo funciona: de 10 desafíos a 1 solución</h2><button class="row-remove" data-action="howto" aria-label="Cerrar">×</button></div>
+            <p class="form-hint">Todo es en orden. Cada tarjeta muestra el paso que toca; 🤖 = lo hace Gemini. Pensamos soluciones adaptables a varios países de Latinoamérica.</p>
+            <div class="howto-grid">
+                ${step(1, '1 · Desafíos', ['Escriban el nombre de cada desafío (el texto de las bases es opcional).', '🤖 Resumen: de qué trata, qué incluye y qué queda fuera.'])}
+                ${step(2, '2 · Problemas', ['Cada uno anota la idea o problema, sin solución.', '🤖 Se asigna sola al desafío que calza.', 'Delimitación: alcance, qué sí y qué no, quién pagaría.', 'Benchmark: copien el prompt → IA investigadora → peguen el informe → 🤖 matriz.', '🤖 Preguntas «¿Cómo podríamos…?» → lluvia de ideas.'])}
+                ${step(3, '3 · Soluciones', ['Lluvia de ideas: anoten todo sin evaluar.', '🤖 Ordenar: % de similitud, fusiones y filtro → máximo 4 finalistas.', 'Benchmark de la solución → 🤖 matriz de innovación (Oslo).', '🤖 Decisión: puntaje con la rúbrica del jurado → el líder elige.', 'Construir: 🤖 ficha prellenada, plan, validación y pitch.'])}
+            </div>
+        </section>`;
 }
 
 // --- Vistas ---
@@ -551,10 +601,12 @@ function renderDesafios() {
                 <p>Ingresen los desafíos el día de la apertura (basta el nombre). Gemini hace un resumen breve: de qué trata, qué incluye y qué queda fuera. Luego sigan a la pestaña 2 · Problemas.</p>
             </div>
             <div class="page-head-actions">
+                ${howToButton()}
                 ${list.length ? `<button class="btn btn-ghost" data-action="summarize-all" ${LOCAL_MODE || aiBatch || !pending ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Resumir', pending))}</button>` : ''}
                 <button class="btn btn-accent" data-action="add-challenge"><svg><use href="#i-plus"/></svg>Desafío</button>
             </div>
         </div>
+        ${howToPanel()}
         ${list.length ? list.map(challengeCard).join('') : `
             <div class="empty">
                 <div class="empty-icon">🎯</div>
@@ -576,10 +628,12 @@ function renderProblemas() {
                 <p>Cada uno anota la idea o problema que quiere abordar, todavía sin solución. Gemini la asigna sola al desafío que mejor calza. Luego, en orden: delimitación → benchmark del problema → lluvia de soluciones.</p>
             </div>
             <div class="page-head-actions">
+                ${howToButton()}
                 ${all.length && list.length ? `<button class="btn btn-ghost" data-action="classify-all" ${LOCAL_MODE || aiBatch || !pendingClass ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Clasificar', pendingClass))}</button>` : ''}
                 <button class="btn btn-accent" data-action="add-problem"><svg><use href="#i-plus"/></svg>Idea o problema</button>
             </div>
         </div>
+        ${howToPanel()}
         ${!list.length ? '<div class="req warn">Primero carguen los desafíos en la pestaña 1 · Desafíos: Gemini los usa para clasificar.</div>' : ''}
         ${groups.length ? groups.map(g => `
             <section class="panel">
@@ -650,7 +704,8 @@ const challengeActions = {
     },
     'delete-challenge': (el) => deleteChallenge(el.dataset.id),
     'summarize-one': (el) => runOne(summarizeChallenge, challengeById(el.dataset.id), `Resumen de ${el.dataset.id} listo`),
-    'summarize-all': () => runAiBatch('Resumir', challenges().filter(needsSummary), summarizeChallenge)
+    'summarize-all': () => runAiBatch('Resumir', challenges().filter(needsSummary), summarizeChallenge),
+    howto: () => toggleHowTo()
 };
 
 const problemActions = {
@@ -667,6 +722,8 @@ const problemActions = {
     'check-problem': (el) => checkOneProblem(el.dataset.id),
     'copy-problem-prompt': (el) => copyProblemPrompt(el.dataset.id),
     'bench-one': (el) => runOne(processBenchmark, problemById(el.dataset.id), `Matriz del benchmark de ${el.dataset.id} lista`),
+    'hmw-one': (el) => runOne(makeHmw, problemById(el.dataset.id), `Preguntas de ${el.dataset.id} listas`),
+    howto: () => toggleHowTo(),
     'idea-for-problem': (el) => newIdeaForProblem(el.dataset.id)
 };
 

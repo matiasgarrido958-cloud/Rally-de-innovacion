@@ -88,7 +88,7 @@ function renderInicio() {
         </div>
 
         <div class="tiles">
-            ${statTile('Ideas', allIdeas.filter(d => d.status !== 'descartada').length, chosen.length ? `Elegida: ${escapeHtml(chosen.map(i => i.id).join(', '))}` : `${allIdeas.filter(d => d.status === 'validacion').length} en validación`, 'ideas', 'var(--k-s3)')}
+            ${statTile('Ideas', allIdeas.filter(d => d.status !== 'descartada').length, chosen.length ? `Elegida: ${escapeHtml(chosen.map(i => i.id).join(', '))}` : `${allIdeas.filter(d => d.status === 'decision').length} en decisión`, 'ideas', 'var(--k-s3)')}
             ${statTile('Tareas', `${doneTasks}<span class="tile-of">/${tasks.length}</span>`, late.length ? `<span class="warn">${late.length} vencida(s)</span>` : 'al día', 'tareas', late.length ? 'var(--k-bad)' : 'var(--k-good)')}
             ${statTile('Requisitos del equipo', `${reqOk}<span class="tile-of">/${reqTotal}</span>`, reqOk === reqTotal ? 'todo en regla' : 'revisar Equipo', 'equipo', reqOk === reqTotal ? 'var(--k-good)' : 'var(--k-warn)')}
             ${statTile('Decisiones', `${decided}<span class="tile-of">/${decisions.length}</span>`, `${pre}/${L.PENDING_BEFORE.length} pendientes previos`, 'preparacion', 'var(--k-s2)')}
@@ -461,7 +461,7 @@ registerView({
     }
 });
 
-registerView({ id: 'temas', label: 'Temas', order: 5, render: renderTemas, actions: sharedActions });
+// La vista Temas se reemplazó por la agrupación por desafío de la pestaña 2 · Problemas.
 
 registerView({
     id: 'tareas', label: 'Tareas', order: 6, render: renderTareas,

@@ -199,7 +199,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .tl-row.parallel .tl-body { padding-left: 10px; border-left: 2px dashed var(--border); }
 
 /* ---------- Etapas de ideas ---------- */
-.pipeline { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 12px; }
+.pipeline { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 12px; }
 .stage { position: relative; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; box-shadow: var(--shadow-sm); overflow: hidden; color: var(--text); }
 .stage::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--stage); opacity: 0.35; }
 .stage:hover { box-shadow: var(--shadow-md); }
@@ -454,7 +454,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     .page-head h1 { font-size: 22px; }
     .page-head-actions, .search, .search input { width: 100%; }
     .page-head-actions .btn-accent { flex: 1; }
-    .pipeline { grid-template-columns: repeat(6, 140px); margin: 0 -16px; padding: 0 16px 4px; }
+    .pipeline { grid-template-columns: repeat(5, 140px); margin: 0 -16px; padding: 0 16px 4px; }
     .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid, .row-2 { grid-template-columns: 1fr; }
     .hero { padding: 18px; }
@@ -484,3 +484,10 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .bench-row { display: grid; grid-template-columns: 170px 1fr; gap: 10px; font-size: 13.5px; line-height: 1.45; }
 .bench-key { font-weight: 700; color: var(--heading); }
 @media (max-width: 640px) { .bench-row { grid-template-columns: 1fr; gap: 2px; } }
+
+.hmw { font-size: 14px; line-height: 1.45; }
+.rubric-why { margin: -6px 0 6px; }
+.howto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.howto-step { display: flex; gap: 10px; align-items: flex-start; }
+.howto-n { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--k-s1); color: var(--surface); display: grid; place-items: center; font-weight: 800; }
+.howto-step ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }

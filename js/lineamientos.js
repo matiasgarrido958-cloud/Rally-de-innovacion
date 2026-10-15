@@ -195,10 +195,62 @@ window.LINEAMIENTOS = {
             { id: 'soluciones', label: 'Qué se hace en el mundo', instruccion: 'De 3 a 6 soluciones existentes con nombre, país y qué hacen en una frase, separadas por " · ".' },
             { id: 'brechas', label: 'Brechas y oportunidades', instruccion: 'Qué no resuelven bien las soluciones existentes: brechas u oportunidades para innovar (2 a 4, separadas por " · ").' },
             { id: 'tendencia', label: 'Tendencia', instruccion: 'Si el tema está en crecimiento, estable o en baja, con el dato que lo respalda.' },
-            { id: 'normativa', label: 'Chile: normativa y programas', instruccion: 'Normativa, políticas, programas o fondos en Chile relacionados.' },
-            { id: 'riesgos', label: 'Riesgos y barreras', instruccion: 'Riesgos o barreras para implementar soluciones en Chile.' },
+            { id: 'normativa', label: 'Normativa y programas', instruccion: 'Normativa, políticas, programas o fondos relacionados en Chile y en otros países de Latinoamérica.' },
+            { id: 'riesgos', label: 'Riesgos y barreras', instruccion: 'Riesgos o barreras para implementar soluciones en Chile y en el resto de Latinoamérica.' },
             { id: 'fuentes', label: 'Fuentes clave', instruccion: 'Las 3 a 5 fuentes más importantes en formato APA abreviado, separadas por " · ".' }
         ]
+    },
+
+    // País de la sede. El Rally se evalúa también a nivel nacional y latinoamericano:
+    // las matrices piden soluciones adaptables a la mayor cantidad de países de la región.
+    SEDE_COUNTRY: 'Chile',
+
+    // 2 · Problemas, último paso: preguntas «¿Cómo podríamos…?» para enfocar la lluvia de ideas.
+    PROBLEM_HMW: {
+        TASK: 'A partir de un problema delimitado y su benchmark, escribe preguntas «¿Cómo podríamos…?» (design thinking) para que un equipo universitario haga una lluvia de ideas de soluciones. No propongas la solución dentro de la pregunta. Piensa en soluciones que se puedan adaptar a varios países de Latinoamérica.',
+        FIELDS: [
+            { id: 'hmw1', instruccion: 'Una pregunta «¿Cómo podríamos…?» que ataque la causa principal del problema.' },
+            { id: 'hmw2', instruccion: 'Una pregunta «¿Cómo podríamos…?» que aproveche una brecha u oportunidad del benchmark.' },
+            { id: 'hmw3', instruccion: 'Una pregunta «¿Cómo podríamos…?» pensada para que la solución funcione en varios países de Latinoamérica.' }
+        ]
+    },
+
+    // 3 · Soluciones, Benchmark de la solución: el informe de la IA investigadora se compacta
+    // en esta matriz de innovación (tipos según el Manual de Oslo 2018: producto o proceso de negocio).
+    SOLUTION_BENCHMARK: {
+        TASK: 'Procesa uno o varios informes de benchmark sobre una idea de solución y evalúa su innovación con el Manual de Oslo 2018 (innovación de producto: bien o servicio; innovación de proceso de negocio: producción, distribución y logística, marketing y ventas, TIC, administración, o desarrollo de productos y procesos). Usa solo lo que dicen los informes y la idea: si algo no aparece, escribe "sin datos".',
+        FIELDS: [
+            { id: 'tipo', label: 'Tipo de innovación (Oslo)', instruccion: 'Si es innovación de producto (bien o servicio), de proceso de negocio (indica la función) o ambas, en una frase.' },
+            { id: 'novedad', label: 'Grado de novedad', instruccion: 'Qué tan nueva es frente a lo que ya existe según los informes.', opciones: ['no es nueva', 'nueva en Chile', 'nueva en Latinoamérica', 'nueva en el mundo'] },
+            { id: 'existentes', label: 'Soluciones parecidas', instruccion: 'De 2 a 5 soluciones parecidas con nombre y país, separadas por " · ".' },
+            { id: 'diferenciacion', label: 'Diferenciación', instruccion: 'Qué distingue a la idea de esas soluciones, en máximo 2 frases. Si ya existe igual, dilo.' },
+            { id: 'ajustes', label: 'Qué ajustar para innovar más', instruccion: 'De 1 a 3 ajustes concretos para que la idea sea más innovadora o se diferencie más, separados por " · ".' },
+            { id: 'valor', label: 'Valor agregado', instruccion: 'El valor agregado que el equipo puede aportar, en una frase.' },
+            { id: 'latam', label: 'Adaptable a Latinoamérica', instruccion: 'En qué países de Latinoamérica se podría implementar y qué habría que adaptar en cada contexto, en máximo 2 frases.' },
+            { id: 'trl', label: 'Madurez alcanzable en 28 h', instruccion: 'Nivel de madurez tecnológica (TRL) que el equipo podría demostrar en 28 horas: TRL 1 = idea en papel; TRL 2 = concepto formulado; TRL 3 = prueba de concepto o maqueta funcional; TRL 4 = prototipo validado en condiciones de laboratorio.', opciones: ['TRL 1', 'TRL 2', 'TRL 3', 'TRL 4'] },
+            { id: 'riesgos', label: 'Riesgos', instruccion: 'Los 2 o 3 riesgos principales de la idea (técnicos, de adopción o regulatorios), separados por " · ".' },
+            { id: 'fuentes', label: 'Fuentes clave', instruccion: 'Las 3 a 5 fuentes más importantes en formato APA abreviado, separadas por " · ".' }
+        ]
+    },
+
+    // 3 · Soluciones, Decisión: Gemini puntúa cada finalista 1–5 en los criterios del jurado
+    // (CRITERIA, con los puntos de la sede) y estima horas, encaje con el equipo y escalabilidad.
+    // El ranking lo arma la página; el líder del equipo confirma la elegida.
+    DECISION_MATRIX: {
+        TASK: 'Eres jurado del Rally Latinoamericano de Innovación 2025 (28 horas). Evalúa con exigencia una idea finalista de un equipo universitario usando todos los insumos: el problema y su benchmark, la idea, su matriz de innovación, las respuestas del equipo y las carreras de sus integrantes. Puntúa de 1 (muy débil) a 5 (excelente) cada criterio según lo que pide. El jurado valora especialmente las soluciones que se pueden adaptar a varios países de Latinoamérica, no solo a uno.',
+        EXTRA: [
+            { id: 'horas', label: 'Horas para un prototipo', instruccion: 'Cuántas horas de trabajo del equipo tomaría tener un prototipo o maqueta demostrable para el video, como un número estimado con una frase de por qué.' },
+            { id: 'encaje', label: 'Encaje con el equipo', instruccion: 'Qué tan bien calza la idea con las carreras y habilidades del equipo.', opciones: ['alto', 'medio', 'bajo'] },
+            { id: 'encaje_motivo', label: 'Por qué el encaje', instruccion: 'En una frase, qué carreras o habilidades del equipo la sostienen o qué les falta.' },
+            { id: 'escalabilidad', label: 'Escalable en Latinoamérica', instruccion: 'En una frase, si se puede adaptar a otros países de Latinoamérica y a cuáles.' },
+            { id: 'mejorar', label: 'Qué la haría ganar', instruccion: 'Los 2 cambios que más subirían su puntaje, separados por " · ".' }
+        ]
+    },
+
+    // 3 · Soluciones, Construir: Gemini prellena la ficha (solo los campos vacíos) con
+    // todo lo que ya existe: problema, benchmarks, idea y decisión.
+    FICHA_PREFILL: {
+        TASK: 'Redacta la ficha de una idea para el reporte del Rally Latinoamericano de Innovación 2025 usando solo los insumos (problema, benchmark del problema, idea, matriz de innovación y evaluación). Escribe en español, claro y breve (máximo 60 palabras por campo). Si un dato no está en los insumos, escribe "por completar" en vez de inventarlo. Considera la implementación en Chile y en otros países de Latinoamérica.'
     },
 
     // Benchmark (fase 2): lo hace el equipo con investigación propia y las IA que

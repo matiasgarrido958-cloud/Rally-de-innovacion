@@ -1,18 +1,20 @@
-// Banco de ideas → Filtro rápido → Benchmark → Ficha → Validación → Elegida.
-// Fase 1 (filtro): tipo de propuesta, semáforo de factibilidad en WORK_HOURS y
-// preguntas del filtro. Fase 2 (benchmark): qué se hace en el mundo, investigado
-// por el equipo con sus propias fuentes e IA.
-// Igual que el flujo de Fast Check: cada idea avanza de a una etapa cumpliendo
-// requisitos; retroceder siempre se puede; descartar guarda el motivo.
+// 3 · Soluciones: Lluvia de ideas → Ordenar → Benchmark → Decisión → Construir.
+// Ordenar: 🤖 similitud (fusionar o no) y filtro eliminatorio; pasan máximo FINALISTS.
+// Benchmark: prompt → IA investigadora → informe → 🤖 matriz de innovación (Oslo).
+// Decisión: 🤖 puntaje con la rúbrica del jurado; el líder elige. Construir: ficha,
+// plan, validación con personas y pitch. Cada idea avanza cumpliendo requisitos;
+// retroceder siempre se puede; descartar guarda el motivo.
 
+const FINALISTS = 4;
 const IDEA_STAGES = [
-    { id: 'banco', label: 'Banco de ideas', color: 'var(--k-s1)', hint: 'Lluvia de ideas de solución: cada idea ataca un problema de la vista Desafíos. Sin evaluar todavía.' },
-    { id: 'filtro', label: 'Filtro rápido', color: 'var(--k-s2)', hint: `Fase 1 en dos capas: Gemini responde lo que se deduce del texto y el equipo lo que la IA no puede saber; sale el semáforo en ${L.WORK_HOURS} h. Si falla, se descarta.` },
-    { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Fase 2: qué se está haciendo en el mundo. El equipo investiga (con IA y fuentes propias) y decide si la idea tiene diferenciación.' },
-    { id: 'ficha', label: 'Ficha de idea', color: 'var(--k-s3)', hint: 'Ficha a–k para cada idea que sigue viva.' },
-    { id: 'validacion', label: 'Validación', color: 'var(--k-s4)', hint: 'Entrevista, encuesta corta o mentor, y puntaje según la rúbrica del jurado (sobre 100).' },
-    { id: 'elegida', label: 'Elegida', color: 'var(--k-s5)', hint: 'La idea con la que el equipo va al reporte y al pitch.' }
+    { id: 'banco', label: 'Lluvia de ideas', color: 'var(--k-s1)', hint: 'Anoten todas las soluciones sin evaluar; cada una ataca un problema de la pestaña 2. Al terminar, mándenlas a Ordenar.' },
+    { id: 'filtro', label: 'Ordenar', color: 'var(--k-s2)', hint: `🤖 Gemini mide la similitud entre ideas (fusionar o no) y aplica el filtro eliminatorio. Pasen al Benchmark máximo ${FINALISTS} finalistas.` },
+    { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Solo finalistas: copien el prompt → IA investigadora → peguen el informe → 🤖 matriz de innovación (Manual de Oslo).' },
+    { id: 'decision', label: 'Decisión', color: 'var(--k-s4)', hint: '🤖 Puntaje con la rúbrica del jurado, horas y encaje con el equipo. El ranking lo arma la página; el líder elige.' },
+    { id: 'elegida', label: 'Construir', color: 'var(--k-s5)', hint: 'La elegida: 🤖 ficha prellenada, plan de trabajo, validación con personas y pitch.' }
 ];
+// Etapas de versiones anteriores del workspace.
+const LEGACY_STAGES = { ficha: 'decision', validacion: 'decision' };
 const IDEA_DISCARDED = { id: 'descartada', label: 'Descartadas', color: 'var(--k-neutral)', hint: 'Ideas que no siguieron, con su motivo. Se pueden restaurar.' };
 const IDEA_ALL = [...IDEA_STAGES, IDEA_DISCARDED];
 
@@ -65,6 +67,8 @@ function blankIdeaData() {
 
 function ideaData(item) {
     const data = { ...blankIdeaData(), ...item.data };
+    if (LEGACY_STAGES[data.status]) data.status = LEGACY_STAGES[data.status];
+    if (LEGACY_STAGES[data.discarded_from]) data.discarded_from = LEGACY_STAGES[data.discarded_from];
     if (!Array.isArray(data.validations)) data.validations = [];
     if (typeof data.filter !== 'object' || !data.filter) data.filter = {};
     if (typeof data.scores !== 'object' || !data.scores) data.scores = {};
@@ -433,6 +437,27 @@ async function deleteTestIdeas() {
     showToast('Datos de prueba eliminados');
 }
 
+// Ordenar → Benchmark: las mejores que pasan el filtro, hasta completar FINALISTS.
+// Si hay ideas marcadas con «Seleccionar», se usan esas.
+function finalistCandidates() {
+    const room = Math.max(0, FINALISTS - finalistsCount());
+    const ready = ideas().map(i => ({ item: i, data: ideaData(i) }))
+        .filter(x => x.data.status === 'filtro' && x.data.ai_filter && !ideaRequirements(x.data, 'benchmark').length);
+    const marked = ideaSelection ? ready.filter(x => ideaSelection.has(x.item.id)) : [];
+    const pool = marked.length ? marked : ready.sort((a, b) => triageRank(a.data) - triageRank(b.data));
+    return pool.slice(0, room).map(x => x.item);
+}
+
+async function promoteFinalists() {
+    const list = finalistCandidates();
+    if (!list.length) return;
+    if (!confirm(`¿Pasar al Benchmark: ${list.map(i => i.id).join(', ')}?`)) return;
+    for (const item of list) await saveItem({ ...item, data: { ...item.data, status: 'benchmark' } }, { rerender: false });
+    ideaTab = 'benchmark';
+    render();
+    showToast(`✓ ${list.length} finalista(s) al Benchmark`);
+}
+
 // --- Selección múltiple: marcar varias tarjetas y borrarlas en grupo ---
 
 function selectionBar(visibleIds) {
@@ -485,7 +510,7 @@ async function sendToFilter() {
     for (const item of list) await saveItem({ ...item, data: { ...item.data, status: 'filtro' } }, { rerender: false });
     ideaTab = 'filtro';
     render();
-    showToast(`✓ ${list.length} idea(s) al Filtro rápido`);
+    showToast(`✓ ${list.length} idea(s) a Ordenar`);
 }
 
 // Filtro: las que Gemini marcó "No pasa" (y no cambiaron después).
@@ -519,13 +544,38 @@ function triageBar(all) {
         return `
             <div class="ai-bar">
                 <div class="ai-bar-text">
-                    <strong>Lluvia de ideas de solución</strong>
-                    <span class="form-hint">Cada idea ataca un problema de la pestaña 2 · Problemas (botón «+ Idea de solución» en cada problema). Anoten todo sin evaluar; al terminar, mándenlas al Filtro rápido, donde Gemini revisa si la solución ataca el problema.${waiting ? ` ${waiting} idea(s) aún sin problema, solución, tema o beneficiario.` : ''}</span>
+                    <strong>Lluvia de ideas</strong>
+                    <span class="form-hint">Cada idea ataca un problema de la pestaña 2 (botón «+ Idea de solución» en cada problema). Anoten todo sin evaluar; al terminar, mándenlas a Ordenar.${waiting ? ` ${waiting} idea(s) aún sin problema, solución o beneficiario.` : ''}</span>
                 </div>
                 <div class="ai-actions">
                     ${testMode() ? `<button class="btn btn-ghost" data-action="test-create">+ Datos de prueba</button>
                         <button class="btn btn-ghost danger" data-action="test-delete">Borrar datos de prueba</button>` : ''}
-                    <button class="btn btn-accent" data-action="send-to-filter" ${sendable ? '' : 'disabled'}>Mandar ${sendable} al Filtro →</button>
+                    <button class="btn btn-accent" data-action="send-to-filter" ${sendable ? '' : 'disabled'}>Mandar ${sendable} a Ordenar →</button>
+                </div>
+            </div>`;
+    }
+    if (ideaTab === 'benchmark') {
+        const list = all.filter(x => x.data.status === 'benchmark');
+        return `
+            <div class="ai-bar">
+                <div class="ai-bar-text">
+                    <strong>Benchmark de las finalistas (${finalistsCount()}/${FINALISTS})</strong>
+                    <span class="form-hint">Abran cada idea: copien el prompt, péguenlo en la IA investigadora, peguen el informe y procesen la matriz de innovación. Listas: ${list.filter(x => x.data.sol_bench).length} de ${list.length}.</span>
+                </div>
+            </div>`;
+    }
+    if (ideaTab === 'decision') {
+        const list = all.filter(x => x.data.status === 'decision');
+        const pending = list.filter(x => !x.data.decision || x.data.decision.hash !== textHash(decisionInput(x.data))).map(x => x.item);
+        const top = list.filter(x => ideaScore(x.data) !== null).sort((a, b) => ideaScore(b.data) - ideaScore(a.data))[0];
+        return `
+            <div class="ai-bar">
+                <div class="ai-bar-text">
+                    <strong>Decisión: ranking con la rúbrica del jurado</strong>
+                    <span class="form-hint">${top ? `Va primera ${escapeHtml(top.item.id)} (${escapeHtml(scoreLabel(top.data))}). ` : ''}Respondan en cada finalista las preguntas del equipo y puntúen con Gemini. El líder elige: abrir la idea → «Construir →».</span>
+                </div>
+                <div class="ai-actions">
+                    <button class="btn btn-accent" data-action="decide-all" ${LOCAL_MODE || aiBatch || !pending.length ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Puntuar', pending.length))}</button>
                 </div>
             </div>`;
     }
@@ -543,15 +593,29 @@ function triageBar(all) {
     return `
         <div class="ai-bar">
             <div class="ai-bar-text">
-                <strong>1 · Capa IA → 2 · Capa equipo</strong>
-                <span class="form-hint">${LOCAL_MODE ? 'La capa IA necesita Supabase: en modo local respondan todo a mano.' : 'Gemini responde lo que se deduce del texto y lo deja marcado con 🤖 (se puede corregir). Luego el equipo responde solo sus preguntas en las ideas que siguen.'}</span>
+                <strong>Ordenar: 🔗 similitud → 🤖 filtro → finalistas</strong>
+                <span class="form-hint">${LOCAL_MODE ? 'Gemini necesita Supabase: en modo local respondan el filtro a mano.' : `1) 🔗 Buscar correlaciones: % de similitud y si conviene fusionar. 2) 🤖 Filtro eliminatorio. 3) Pasen máximo ${FINALISTS} finalistas al Benchmark (hay ${finalistsCount()}).`}</span>
                 <div class="card-tags">${counts.join('')}</div>
             </div>
             <div class="ai-actions">
                 ${rejected ? `<button class="btn btn-ghost danger" data-action="ai-discard">Descartar ${rejected} «No pasa»</button>` : ''}
-                <button class="btn btn-accent" data-action="ai-triage" ${LOCAL_MODE || triageRun || !pending ? 'disabled' : ''}>${label}</button>
+                <button class="btn btn-ghost" data-action="ai-triage" ${LOCAL_MODE || triageRun || !pending ? 'disabled' : ''}>${label}</button>
+                ${finalistCandidates().length ? `<button class="btn btn-accent" data-action="promote-finalists">Pasar ${finalistCandidates().length} finalista(s) al Benchmark →</button>` : ''}
             </div>
         </div>`;
+}
+
+// Preguntas que responde el equipo en la Decisión (las que la IA no puede saber).
+function teamQuestions() {
+    const applied = new Set(TRIAGE.QUESTIONS.filter(q => q.apply).map(q => q.apply));
+    return [
+        ...L.FEASIBILITY.filter(q => !applied.has(`feasibility.${q.id}`)).map(q => ({ path: `feasibility.${q.id}`, label: q.label })),
+        ...L.QUICK_FILTER.filter(q => !applied.has(`filter.${q.id}`)).map(q => ({ path: `filter.${q.id}`, label: q.label }))
+    ];
+}
+
+function finalistsCount() {
+    return ideas().filter(i => ['benchmark', 'decision'].includes(ideaData(i).status)).length;
 }
 
 function ideaRequirements(data, target) {
@@ -561,39 +625,24 @@ function ideaRequirements(data, target) {
         case 'filtro':
             if (empty(ideaContext(data).problema)) missing.push('Elige o escribe el problema que ataca.');
             if (empty(data.title)) missing.push('Escribe la idea de solución en una línea.');
-            if (!data.theme) missing.push('Elige el tema.');
             if (empty(data.beneficiary)) missing.push('Indica el beneficiario directo.');
             break;
         case 'benchmark': {
-            if (!data.offering) missing.push('Indica si es producto, servicio o ambos.');
-            const f = feasibility(data);
-            if (f.answered < L.FEASIBILITY.length) missing.push(`Responde el semáforo de factibilidad (faltan ${L.FEASIBILITY.length - f.answered}).`);
-            else if (f.level === 'rojo') missing.push(`Semáforo rojo (${f.points}/${f.max}): no alcanza en ${L.WORK_HOURS} h. Ajústala o descártala.`);
-            const unanswered = L.QUICK_FILTER.filter(q => !data.filter[q.id]).length;
-            if (unanswered) missing.push(`Responde el filtro rápido (faltan ${unanswered}).`);
-            const failed = filterFailures(data);
-            if (failed.length) missing.push(`Falla el filtro (${failed.length}): descártala con el motivo correspondiente.`);
+            const unanswered = TRIAGE.QUESTIONS.filter(q => q.apply && !getPath(data, q.apply));
+            if (unanswered.length) missing.push(`Ordénala con Gemini o responde el filtro (faltan ${unanswered.length}).`);
+            const failed = TRIAGE.QUESTIONS.filter(q => q.key && ((q.apply && getPath(data, q.apply) === 'no') || (!q.apply && data.ai_filter && (data.ai_filter.answers[q.id] || {}).valor === 'no')));
+            if (failed.length) missing.push(`No pasa el filtro (${failed.map(q => q.label).join(' ')}): descártala o ajústala.`);
             break;
         }
-        case 'ficha': {
-            const refs = benchmarkRefsDone(data);
-            if (refs < L.BENCHMARK_MIN_REFS) missing.push(`Registra al menos ${L.BENCHMARK_MIN_REFS} referentes con nombre y diferencia (hay ${refs}).`);
-            if (empty(data.benchmark.differentiation)) missing.push('Escribe qué diferencia a nuestra idea de lo que existe.');
-            if (data.benchmark.verdict !== 'seguir') {
-                missing.push(data.benchmark.verdict === 'descartar' ? 'El benchmark dice descartar: descártala.'
-                    : data.benchmark.verdict === 'pivotar' ? 'El benchmark dice ajustar la idea: ajústala y vuelve a decidir.'
-                    : 'Decide con el benchmark: seguir, ajustar o descartar.');
-            }
-            break;
-        }
-        case 'validacion':
-            FICHA_FLAT.filter(f => f.required && empty(data[f.id])).forEach(f => missing.push(`Completa ${f.label.replace(/^[a-k]\) /, '')}.`));
+        case 'decision':
+            if (!data.sol_bench) missing.push('Procesa el informe del benchmark (matriz de innovación).');
             break;
         case 'elegida': {
-            const done = data.validations.filter(v => (v.finding || '').trim()).length;
-            if (!done) missing.push('Registra al menos una validación con su hallazgo.');
+            const pending = teamQuestions().filter(q => !getPath(data, q.path)).length;
+            if (pending) missing.push(`Respondan las preguntas del equipo (faltan ${pending}).`);
+            else if (feasibility(data).level === 'rojo') missing.push(`Semáforo rojo: no alcanza en ${L.WORK_HOURS} h de trabajo.`);
             const unscored = L.CRITERIA.filter(c => !data.scores[c.id]).length;
-            if (unscored) missing.push(`Puntúa todos los criterios (faltan ${unscored}).`);
+            if (unscored) missing.push(`Falta el puntaje de ${unscored} criterio(s): usen 🤖 Puntuar o pongan el puntaje a mano.`);
             break;
         }
     }
@@ -604,11 +653,12 @@ function ideaWarnings(item, data) {
     const warnings = [];
     const stage = ideaStageIndex(data.status);
     if (data.theme === 'reciclaje') warnings.push('Reciclaje: ya ganaron Hojabeta y The Last Resort. ¿Cuál es nuestro ángulo distinto?');
-    const ficha = ideaStageIndex('ficha');
-    if (stage >= ficha && !String(data.k_fuentes || '').trim()) warnings.push('Sin fuentes APA todavía (k): el reporte las exige, incluidas las de IA.');
-    if (stage >= ficha && !String(data.i_riesgos || '').trim()) warnings.push('Sin riesgos ni supuestos anotados (i).');
-    const otherChosen = ideas().filter(i => i.id !== item.id && i.data.status === 'elegida');
-    if (otherChosen.length && stage >= ideaStageIndex('validacion')) warnings.push(`Ya hay otra idea elegida: ${otherChosen.map(i => i.id).join(', ')}.`);
+    const build = ideaStageIndex('elegida');
+    if (stage >= build && !String(data.k_fuentes || '').trim()) warnings.push('Sin fuentes APA todavía (k): el reporte las exige, incluidas las de IA.');
+    if (stage >= build && !String(data.i_riesgos || '').trim()) warnings.push('Sin riesgos ni supuestos anotados (i).');
+    const otherChosen = ideas().filter(i => i.id !== item.id && ideaData(i).status === 'elegida');
+    if (otherChosen.length && stage >= ideaStageIndex('decision')) warnings.push(`Ya hay otra idea elegida: ${otherChosen.map(i => i.id).join(', ')}.`);
+    if (data.status === 'filtro' && finalistsCount() >= FINALISTS) warnings.push(`Ya hay ${finalistsCount()} finalistas en Benchmark y Decisión (máximo sugerido: ${FINALISTS}).`);
     return warnings;
 }
 
@@ -666,10 +716,7 @@ function renderIdeasView() {
     if (ideaTab === 'filtro') {
         filtered.sort((a, b) => (triageRank(a.data) - triageRank(b.data)) || (feasibility(b.data).points - feasibility(a.data).points));
     }
-    if (ideaTab === 'benchmark') {
-        filtered.sort((a, b) => feasibility(b.data).points - feasibility(a.data).points);
-    }
-    if (ideaTab === 'validacion' || ideaTab === 'elegida') {
+    if (ideaTab === 'decision' || ideaTab === 'elegida') {
         filtered.sort((a, b) => (ideaScore(b.data) ?? -1) - (ideaScore(a.data) ?? -1));
     }
     const current = findOption(IDEA_ALL, ideaTab);
@@ -681,6 +728,7 @@ function renderIdeasView() {
                 <p>${all.length - discardedCount} activas · ${all.filter(x => x.data.status === 'elegida').length} elegida(s) · ${discardedCount} descartadas</p>
             </div>
             <div class="page-head-actions">
+                ${howToButton()}
                 <label class="search">
                     <svg><use href="#i-search"/></svg>
                     <input type="search" id="ideaSearch" placeholder="Buscar idea, tema, beneficiario…" aria-label="Buscar" value="${escapeHtml(ideaSearch)}">
@@ -688,6 +736,7 @@ function renderIdeasView() {
                 <button class="btn btn-accent" data-action="new-idea"><svg><use href="#i-plus"/></svg>Nueva idea</button>
             </div>
         </div>
+        ${howToPanel()}
         <nav class="pipeline" aria-label="Etapas de las ideas">
             ${IDEA_STAGES.map((s, i) => `
                 <button class="stage ${s.id === ideaTab ? 'active' : ''}" data-action="idea-tab" data-status="${s.id}" style="--stage:${s.color}" aria-pressed="${s.id === ideaTab}">
@@ -788,7 +837,6 @@ function filterRow(d, path, label, hint = '') {
 function sectionFilter(d, open) {
     const f = d.ai_filter;
     const outdated = triageOutdated(d);
-    const applied = new Set(TRIAGE.QUESTIONS.filter(q => q.apply).map(q => q.apply));
     // Capa IA: preguntas que Gemini responde (las sin campo, como "problema", solo informan).
     const aiRows = TRIAGE.QUESTIONS.map(q => {
         const a = f ? f.answers[q.id] || {} : {};
@@ -802,16 +850,11 @@ function sectionFilter(d, open) {
         else if (getPath(d, q.apply) && d.ai_set && f) hint = '👥 Respondido por el equipo';
         return filterRow(d, q.apply, q.label, hint);
     }).join('');
-    // Capa equipo: lo que la IA no puede saber.
-    const teamRows = [
-        ...L.FEASIBILITY.filter(q => !applied.has(`feasibility.${q.id}`)).map(q => filterRow(d, `feasibility.${q.id}`, q.label)),
-        ...L.QUICK_FILTER.filter(q => !applied.has(`filter.${q.id}`)).map(q => filterRow(d, `filter.${q.id}`, q.label))
-    ].join('');
     const offering = d.offering ? findOption(L.OFFERING_TYPES, d.offering) : null;
     const verdict = f ? findOption(TRIAGE.VERDICTS, f.verdict) : null;
-    return fold('2 · Filtro rápido (fase 1)', open, `
+    return fold('2 · Ordenar (🤖 filtro eliminatorio)', open, `
         <div class="subgroup">
-            <div class="subgroup-title">1 · Capa IA ${verdict ? chip(verdict) : ''}</div>
+            <div class="subgroup-title">Filtro eliminatorio ${verdict ? chip(verdict) : ''}</div>
             ${lastEvaluation && lastEvaluation.id === currentEditingId ? `<div class="req ok">${escapeHtml(lastEvaluation.text)}</div>` : ''}
             ${f ? `<p class="form-hint">${escapeHtml(f.resumen)} · Evaluada a las ${escapeHtml(clockTime(f.at))} (${escapeHtml(timeAgo(f.at))}) con ${escapeHtml(f.model)}. Lo marcado con 🤖 lo respondió Gemini: corríjanlo si no corresponde.</p>`
                 : `<p class="form-hint">${LOCAL_MODE ? 'En modo local no hay IA: respondan estas preguntas a mano.' : 'Todavía no se evalúa con Gemini. También se pueden responder a mano.'}</p>`}
@@ -822,11 +865,6 @@ function sectionFilter(d, open) {
             <div class="ai-actions">
                 <button type="button" class="btn btn-ghost" data-modal-action="ai-eval" ${LOCAL_MODE || !String(d.title || '').trim() ? 'disabled' : ''}>🤖 ${f ? 'Evaluar de nuevo' : 'Evaluar con Gemini'}</button>
             </div>
-        </div>
-        <div class="subgroup">
-            <div class="subgroup-title">2 · Capa equipo <span id="feasBadge">${feasibilityBadge(d)}</span></div>
-            <p class="form-hint">Lo que la IA no puede saber. El semáforo de factibilidad en ${L.WORK_HOURS} h sale de estas respuestas y de la demo.</p>
-            ${teamRows}
         </div>
     `, ideaRequirements(d, 'benchmark').length === 0, 'filtro');
 }
@@ -963,39 +1001,189 @@ function benchmarkRefRow(r, index) {
         </div>`;
 }
 
+// --- 3 · Benchmark de la solución: prompt → informe → 🤖 matriz de innovación (Oslo) ---
+
+const SBENCH = L.SOLUTION_BENCHMARK;
+const DMATRIX = L.DECISION_MATRIX;
+
+function matrixText(config, values) {
+    return config.FIELDS.map(f => values && values[f.id] ? `${f.label}: ${values[f.id]}` : '').filter(Boolean).join('\n');
+}
+
+function ideaSummaryText(d) {
+    return [
+        ['Idea', d.title], ['Nombre', d.name], ['Beneficiario', d.beneficiary],
+        ['Tipo', d.offering ? findOption(L.OFFERING_TYPES, d.offering).label : ''], ['Notas', d.notes],
+        ['Solución', d.d_solucion], ['Componente innovador', d.e_innovacion]
+    ].filter(([, v]) => String(v || '').trim()).map(([k, v]) => `${k}: ${v}`).join('\n');
+}
+
+function solutionResearchPrompt(d) {
+    const ctx = ideaContext(d);
+    const pb = ctx.problem && ctx.problem.data.bench;
+    return `Actúa como analista de vigilancia tecnológica y de mercado. Investiga en profundidad, con búsqueda web y fuentes reales, si ya existe algo como esta IDEA DE SOLUCIÓN y qué tan innovadora es, en ${L.SEDE_COUNTRY}, en Latinoamérica y en el mundo. Es de un equipo universitario de ingeniería del Rally Latinoamericano de Innovación (28 horas); el jurado valora soluciones que se puedan adaptar a varios países de Latinoamérica.
+
+DESAFÍO: ${ctx.desafio || 'sin datos'}
+PROBLEMA: ${ctx.problema || 'sin datos'}
+${pb ? `LO QUE YA SE SABE DEL PROBLEMA:\n${matrixText(L.PROBLEM_BENCHMARK, pb)}\n` : ''}
+IDEA DE SOLUCIÓN:
+${ideaSummaryText(d)}
+
+QUÉ NECESITO (una sección por punto)
+1. Soluciones parecidas: entre 5 y 8, con nombre, país, enlace, qué hacen y en qué se diferencian de esta idea.
+2. Patentes, investigación o proyectos públicos relacionados.
+3. Tipo de innovación según el Manual de Oslo 2018: de producto (bien o servicio) o de proceso de negocio (y en qué función).
+4. Qué es realmente nuevo: ¿nuevo en ${L.SEDE_COUNTRY}, en Latinoamérica o en el mundo? Sé crítico: si ya existe igual, dilo.
+5. Cómo diferenciarla más y qué valor agregado podría aportar el equipo.
+6. En qué países de Latinoamérica se podría implementar y qué habría que adaptar en cada uno.
+7. Viabilidad técnica: tecnologías necesarias y qué se puede prototipar o demostrar en 28 horas.
+8. Modelo de ingresos y costos de referencia de soluciones parecidas.
+9. Riesgos principales (técnicos, de adopción, regulatorios).
+10. Fuentes en formato APA 7.
+
+REGLAS
+- No inventes empresas, cifras, enlaces ni citas. Si no encuentras algo, escribe "no encontrado".
+- Marca con (verificar) lo que no pudiste confirmar en una fuente primaria.
+- Responde en español.`;
+}
+
+function matrixHtml(config, values, note = '') {
+    if (!values) return '';
+    return `<div class="bench-matrix">
+        ${config.FIELDS.map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${escapeHtml(values[f.id] || '—')}</span></div>`).join('')}
+        <p class="form-hint">🤖 ${escapeHtml(values.model || '')} · ${escapeHtml(clockTime(values.at))}${note}</p>
+    </div>`;
+}
+
 function sectionBenchmark(d, open) {
-    const b = d.benchmark;
-    return fold('3 · Benchmark (fase 2)', open, `
-        <p class="form-hint">Investiguen qué se está haciendo en el mundo con el modo investigador de cada IA (Claude, ChatGPT, Gemini, Perplexity)
-            y sus propias fuentes. <strong>Verifiquen cada enlace</strong> antes de dejarlo: las IA inventan referencias.
-            Lo que usen va con cita APA en (k), incluido el uso de IA.</p>
+    const outdated = d.sol_bench && d.sol_bench.hash !== textHash({ idea: ideaSummaryText(d), informes: d.sol_report || '' });
+    return fold('3 · Benchmark de la solución', open, `
+        <p class="form-hint">1) Copien el prompt y péguenlo en el modo investigador de Claude, ChatGPT, Gemini o Perplexity. 2) Peguen el informe (pueden pegar varios). 3) 🤖 Procesar: Gemini arma la matriz de innovación con el Manual de Oslo.</p>
+        <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="sol-prompt">📋 Copiar prompt de investigación</button></div>
+        <textarea class="form-textarea small prompt-box" id="solPromptBox" rows="6" readonly hidden></textarea>
+        ${field('sol_report', 'Informe de la IA investigadora', d.sol_report || '', { textarea: true, rows: 5, placeholder: 'Pega aquí el informe completo' })}
+        <div class="ai-actions"><button type="button" class="btn btn-accent" data-modal-action="sol-bench" ${LOCAL_MODE ? 'disabled' : ''}>🤖 Procesar informe → matriz de innovación</button></div>
+        ${matrixHtml(SBENCH, d.sol_bench, outdated ? ' · ⟳ cambió el informe o la idea: vuelve a procesarlo' : '')}
+    `, Boolean(d.sol_bench), 'benchmark');
+}
+
+// --- 4 · Decisión: 🤖 puntaje con la rúbrica + preguntas del equipo → ranking ---
+
+function teamText() {
+    return byKind('member').map(m => [m.data.name, m.data.career, m.data.role].filter(v => String(v || '').trim()).join(' – ')).filter(Boolean).join('\n');
+}
+
+function decisionInput(d) {
+    const ctx = ideaContext(d);
+    const pb = ctx.problem && ctx.problem.data.bench;
+    const yes = { si: 'Sí', no: 'No', medio: 'A medias' };
+    return {
+        desafio: ctx.desafio, problema: ctx.problema,
+        benchmark_del_problema: pb ? matrixText(L.PROBLEM_BENCHMARK, pb) : '',
+        idea: ideaSummaryText(d),
+        matriz_de_innovacion: d.sol_bench ? matrixText(SBENCH, d.sol_bench) : '',
+        respuestas_del_equipo: teamQuestions().map(q => `${q.label} ${yes[getPath(d, q.path)] || 'sin responder'}`).join('\n'),
+        equipo: teamText()
+    };
+}
+
+function decisionFields() {
+    return [
+        ...L.CRITERIA.flatMap(c => [
+            { id: `p_${c.id}`, instruccion: `Puntaje de 1 a 5 en «${c.label}» (${c.points} puntos): ${c.rubric}`, opciones: ['1', '2', '3', '4', '5'] },
+            { id: `m_${c.id}`, instruccion: `Por qué ese puntaje en ${c.short}, en una frase de máximo 20 palabras.` }
+        ]),
+        ...DMATRIX.EXTRA
+    ];
+}
+
+async function decideIdea(item) {
+    const d = ideaData(getItem(item.id) || item);
+    const input = decisionInput(d);
+    const result = await askGemini(DMATRIX, input, decisionFields());
+    const r = result.campos;
+    const fresh = ideaData(getItem(item.id) || item);
+    const scores = { ...fresh.scores };
+    L.CRITERIA.forEach(c => { if (r[`p_${c.id}`]) scores[c.id] = r[`p_${c.id}`]; });
+    fresh.scores = scores;
+    fresh.decision = { ...r, model: result.model, at: new Date().toISOString(), hash: textHash(input) };
+    await saveItem({ ...(getItem(item.id) || item), data: fresh }, { rerender: false });
+    return fresh;
+}
+
+function sectionDecision(d, open) {
+    const dec = d.decision;
+    const label = scoreLabel(d);
+    const total = L.CRITERIA.reduce((sum, c) => sum + c.points, 0);
+    const outdated = dec && dec.hash !== textHash(decisionInput(d));
+    const level = dec ? findOption(L.PROBLEM_CLASSIFY.LEVELS, dec.encaje) : null;
+    return fold('4 · Decisión', open, `
         <div class="subgroup">
-            <div class="subgroup-title">Paso 1 · Investigar</div>
-            <p class="form-hint">Copien el prompt y péguenlo en el modo investigador de cada IA.</p>
-            <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="copy-prompt">📋 Copiar prompt de investigación</button></div>
-            <textarea class="form-textarea small prompt-box" id="promptBox" rows="6" readonly hidden></textarea>
+            <div class="subgroup-title">Preguntas del equipo <span id="feasBadge">${feasibilityBadge(d)}</span></div>
+            <p class="form-hint">Lo que la IA no puede saber. Con esto y la demo sale el semáforo de factibilidad en ${L.WORK_HOURS} h.</p>
+            ${teamQuestions().map(q => filterRow(d, q.path, q.label)).join('')}
         </div>
         <div class="subgroup">
-            <div class="subgroup-title">Paso 2 · Respuestas de las IA</div>
-            <div class="rows">${b.research.map(researchRow).join('')}</div>
-            <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-research"><svg><use href="#i-plus"/></svg>Agregar respuesta de una IA</button>
+            <div class="subgroup-title">Rúbrica del jurado (${total} pts) ${label ? `<span class="score-big">${label}</span>` : ''}</div>
+            <p class="form-hint">🤖 Gemini puntúa con todo lo anterior (problema, benchmarks, preguntas del equipo y carreras). Pueden corregir cada puntaje.</p>
+            ${L.CRITERIA.map(c => rubricRow(d, c) + (dec && dec[`m_${c.id}`] ? `<p class="form-hint rubric-why">🤖 ${escapeHtml(dec[`m_${c.id}`])}</p>` : '')).join('')}
+            ${dec ? `<div class="bench-matrix">
+                ${DMATRIX.EXTRA.filter(f => f.id !== 'encaje_motivo').map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${f.id === 'encaje' && level ? `${chip(level)} ${escapeHtml(dec.encaje_motivo || '')}` : escapeHtml(dec[f.id] || '—')}</span></div>`).join('')}
+                <p class="form-hint">🤖 ${escapeHtml(dec.model || '')} · ${escapeHtml(clockTime(dec.at))}${outdated ? ' · ⟳ cambió algo: vuelve a puntuar' : ''}</p>
+            </div>` : ''}
+            <div class="ai-actions"><button type="button" class="btn btn-accent" data-modal-action="decide" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${dec ? 'Puntuar de nuevo' : 'Puntuar con la rúbrica'}</button></div>
         </div>
+    `, ideaRequirements(d, 'elegida').length === 0, 'decision');
+}
+
+// --- 5 · Construir: ficha (🤖 prellenada), validación con personas y plan ---
+
+function prefillFields(d) {
+    return FICHA_FLAT.filter(f => !String(d[f.id] || '').trim()).slice(0, 16)
+        .map(f => ({ id: f.id, instruccion: `${f.label.replace(/^[a-k]\) /, '')}${f.hint ? ` (${f.hint})` : ''}.` }));
+}
+
+async function prefillFicha() {
+    const fields = prefillFields(draft);
+    if (!fields.length) return showToast('La ficha ya está completa', 'warning');
+    const input = { ...decisionInput(draft), evaluacion: draft.decision ? DMATRIX.EXTRA.map(f => `${f.label}: ${draft.decision[f.id] || ''}`).join('\n') : '' };
+    const result = await askGemini({ TASK: L.FICHA_PREFILL.TASK }, input, fields);
+    let n = 0;
+    fields.forEach(f => {
+        const value = String(result.campos[f.id] || '').trim();
+        if (value && !String(draft[f.id] || '').trim()) { draft[f.id] = value; n++; }
+    });
+    hasUnsavedChanges = true;
+    renderModalBody();
+    showToast(`✓ ${n} campo(s) de la ficha prellenados: revísenlos y guarden`, 'success', 6000);
+}
+
+function sectionBuild(d, open) {
+    return fold('5 · Construir', open, `
+        <div class="ai-actions"><button type="button" class="btn btn-accent" data-modal-action="prefill" ${LOCAL_MODE ? 'disabled' : ''}>🤖 Prellenar la ficha (solo campos vacíos)</button></div>
+        ${sectionFicha(d, true)}
         <div class="subgroup">
-            <div class="subgroup-title">Paso 3 · Depurar e importar</div>
-            <p class="form-hint">Copien el prompt de depuración (junta todas las respuestas) y péguenlo en Claude o ChatGPT Pro.
-                Peguen el resultado abajo e importen los referentes. Sin depuración, se importan desde las respuestas del paso 2.</p>
-            <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="copy-consolidation">📋 Copiar prompt para depurar</button></div>
-            <textarea class="form-textarea small prompt-box" id="consolidationBox" rows="6" readonly hidden></textarea>
-            ${field('benchmark.consolidated', 'Resultado depurado', b.consolidated, { textarea: true, rows: 4, placeholder: 'Pega aquí la respuesta de la depuración' })}
-            <div class="ai-actions"><button type="button" class="btn btn-ghost" data-modal-action="import-refs">⬇ Importar referentes</button></div>
+            <div class="subgroup-title">Validación con personas</div>
+            <p class="form-hint">Entrevista, encuesta corta o mentor: qué aprendimos y qué cambia en la idea.</p>
+            <div class="rows">${d.validations.map(validationRow).join('')}</div>
+            <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-validation"><svg><use href="#i-plus"/></svg>Agregar validación</button>
         </div>
-        <div class="rows">${b.refs.map(benchmarkRefRow).join('')}</div>
-        <button type="button" class="btn btn-ghost btn-add" data-modal-action="add-ref"><svg><use href="#i-plus"/></svg>Agregar referente</button>
-        <div class="form-group"><label class="form-label">Tendencia del tema</label>${pills('benchmark.trend', L.BENCHMARK_TRENDS, b.trend)}</div>
-        ${field('benchmark.differentiation', 'Qué nos diferencia de lo que existe', b.differentiation, { textarea: true, required: true, placeholder: 'Precio, público, tecnología, contexto chileno…' })}
-        ${field('benchmark.notes', 'Notas de la investigación', b.notes, { textarea: true, rows: 3, placeholder: 'Hallazgos, cifras, riesgos, fuentes por citar' })}
-        <div class="form-group"><label class="form-label">Decisión <span class="req-star">*</span></label>${pills('benchmark.verdict', L.BENCHMARK_VERDICTS, b.verdict)}</div>
-    `, ideaRequirements(d, 'ficha').length === 0, 'benchmark');
+    `, false, 'build');
+}
+
+async function runModalAi(fn, okText) {
+    const button = document.activeElement;
+    if (button && button.tagName === 'BUTTON') {
+        button.disabled = true;
+        button.textContent = '🤖 Procesando…';
+    }
+    try {
+        await fn();
+        if (okText) showToast(`✓ ${okText} a las ${clockTime(new Date().toISOString())}`, 'success', 6000);
+    } catch (e) {
+        showToast(`❌ ${e.message}`, 'error', 9000);
+        renderModalBody();
+    }
 }
 
 async function evaluateOpenIdea() {
@@ -1094,9 +1282,9 @@ function sectionFicha(d, open) {
         const hint = [f.hint, c ? `Rúbrica: ${c.short} (${c.points} pts)` : ''].filter(Boolean).join(' · ');
         return field(f.id, f.label, d[f.id], { textarea: !f.input, rows: f.rows || 2, required: f.required, hint });
     };
-    return fold('4 · Ficha de idea', open, FICHA_FIELDS.map(f => f.group
+    return fold('Ficha de la idea', open, FICHA_FIELDS.map(f => f.group
         ? `<div class="subgroup"><div class="subgroup-title">${escapeHtml(f.group)}</div>${f.fields.some(x => x.input) ? `<div class="row-2">${f.fields.filter(x => x.input).map(render).join('')}</div>` : ''}${f.fields.filter(x => !x.input).map(render).join('')}</div>`
-        : render(f)).join(''), ideaRequirements(d, 'validacion').length === 0, 'ficha');
+        : render(f)).join(''), FICHA_FLAT.filter(f => f.required).every(f => String(d[f.id] || '').trim()), 'ficha');
 }
 
 function validationRow(v, index) {
@@ -1152,7 +1340,7 @@ function renderModalBody() {
     const stage = Math.max(0, ideaStageIndex(d.status));
     const discarded = d.status === 'descartada';
     const reached = discarded ? Math.max(0, ideaStageIndex(d.discarded_from)) : stage;
-    const sections = [sectionIdea, sectionFilter, sectionBenchmark, sectionFicha, sectionValidation];
+    const sections = [sectionIdea, sectionFilter, sectionBenchmark, sectionDecision, sectionBuild];
     const openIndex = Math.min(reached, sections.length - 1);
     const body = document.getElementById('modalBody');
     // Al repintar se conservan las secciones abiertas y la posición del scroll.
@@ -1174,7 +1362,7 @@ function renderModalBody() {
         </div>
         <div class="req-box" id="reqBox"></div>
         ${sections.slice(0, reached + 1).map((fn, i) => fn(d, i === openIndex)).join('')}
-        ${reached >= 1 ? sectionPlan(d, false) : ''}`;
+        ${reached >= ideaStageIndex('decision') ? sectionPlan(d, false) : ''}`;
     openKeys.forEach(([key, open]) => {
         const el = body.querySelector(`details[data-fold="${key}"]`);
         if (el) el.open = open;
@@ -1316,6 +1504,25 @@ function handleModalAction(action, el) {
             hasUnsavedChanges = true;
             return renderModalBody();
         case 'ai-eval': return evaluateOpenIdea();
+        case 'sol-prompt': return copyText(solutionResearchPrompt(draft), 'solPromptBox');
+        case 'sol-bench':
+            if (!String(draft.sol_report || '').trim()) return showToast('Pega primero el informe de la IA investigadora', 'warning');
+            return runModalAi(async () => {
+                const input = { idea: ideaSummaryText(draft), informes: draft.sol_report };
+                const result = await askGemini(SBENCH, input);
+                draft.sol_bench = { ...result.campos, model: result.model, at: new Date().toISOString(), hash: textHash(input) };
+                await persistIdea('');
+                renderModalBody();
+            }, `Matriz de innovación de ${currentEditingId} lista`);
+        case 'decide':
+            return runModalAi(async () => {
+                if (hasUnsavedChanges) await persistIdea('');
+                draft = JSON.parse(JSON.stringify(await decideIdea(getItem(currentEditingId))));
+                hasUnsavedChanges = false;
+                renderModalBody();
+                showToast(`✓ Puntaje de ${currentEditingId}: ${scoreLabel(draft)} (${clockTime(new Date().toISOString())})`, 'success', 6000);
+            }, '');
+        case 'prefill': return runModalAi(prefillFicha, '');
         case 'plan-tasks': return addPlanTasks();
         case 'remove-validation':
             draft.validations.splice(Number(el.dataset.index), 1);
@@ -1455,6 +1662,9 @@ registerView({
             if (getItem(el.dataset.id)) openIdea(el.dataset.id);
         },
         'ai-triage': () => runTriage(),
+        'promote-finalists': () => promoteFinalists(),
+        howto: () => toggleHowTo(),
+        'decide-all': () => runAiBatch('Puntuar', ideas().filter(i => { const d = ideaData(i); return d.status === 'decision' && (!d.decision || d.decision.hash !== textHash(decisionInput(d))); }), decideIdea),
         'ai-discard': () => discardRejected(),
         'send-to-filter': () => sendToFilter(),
         'test-create': () => createTestIdeas(),
