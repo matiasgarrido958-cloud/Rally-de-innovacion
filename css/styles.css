@@ -507,3 +507,6 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .pmini-actions { display: flex; gap: 5px; justify-content: flex-end; }
 .btn.btn-xs { padding: 3px 8px; font-size: 12px; min-height: 0; height: 26px; }
 .pmini-tally { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 2px; }
+.pmini-text { font-weight: 700; color: var(--heading); }
+.pmini-challenge { font-size: 12px; font-weight: 600; color: var(--text); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pmini-level { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -41,7 +41,7 @@ El proceso parte por el problema, no por la solución, y la IA hace el trabajo p
    2. **Ordenar**: 🔗 *Similitud* compara los problemas (% de similitud, si conviene fusionar o no, y
       *Fusionar* crea uno nuevo y descarta los originales). 🤖 *Priorizar* da el **primer puntaje,
       1–5** (`PROBLEM_PRIORITY`): 5 sí · 4 probable · 3 tal vez · 2 o menos no. Sin máximo: cada uno
-      pasa con *Benchmark →*, o todos los ≥4 con un botón. Se ven como tarjetas compactas con el puntaje arriba; clic para abrir y editar.
+      pasa con *Benchmark →*, o todos los ≥4 con un botón. En todas las fases los problemas se ven como tarjetas compactas (problema como título, desafío y el estado o puntaje de la fase arriba); clic para abrir y editar.
    3. **Benchmark**: delimitación (alcance, qué abordaremos, qué queda fuera, quién pagaría,
       evidencia) → *Copiar prompt* → IA investigadora → pegar informe → 🤖 matriz (`PROBLEM_BENCHMARK`).
    4. **Decisión**: 🤖 *Puntuar* da el **segundo puntaje**, con el benchmark (`PROBLEM_DECISION`):

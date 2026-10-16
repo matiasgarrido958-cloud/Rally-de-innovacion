@@ -645,26 +645,58 @@ function problemCorrPanel() {
 
 // --- Ordenar: tarjetas compactas con el puntaje arriba, para ver todo de una vez ---
 
+// Lo que muestra arriba la tarjeta compacta, según la fase.
+function miniBadge(p, stage) {
+    const total = problemTotal(p);
+    if (stage === 'ordenar') {
+        const v = priorityValue(p);
+        const level = v ? PPRIO.LEVELS[v] : null;
+        return { color: level ? level.color : '', score: v ? `${v}<small>/5</small>` : '—', label: (level ? level.label : 'Sin puntaje') + (v && needsPriority(p) ? ' ⟳' : '') };
+    }
+    if (stage === 'benchmark') {
+        const done = Boolean(p.data.bench);
+        const report = String(p.data.bench_report || '').trim();
+        return { color: done ? 'var(--k-good)' : report ? 'var(--k-s4)' : '', score: done ? '✓' : '…', label: done ? 'Matriz lista' : report ? 'Informe pegado: falta 🤖 matriz' : 'Falta investigar' };
+    }
+    if (stage === 'decision' || stage === 'elegido') {
+        const color = total === null ? '' : total >= 75 ? 'var(--k-good)' : total >= 55 ? 'var(--k-s4)' : 'var(--k-bad)';
+        const extra = stage === 'elegido' ? (p.data.hmw ? ' · ¿Cómo podríamos? ✓' : ' · falta ¿Cómo podríamos?') : (total !== null && needsProblemDecision(p) ? ' ⟳' : '');
+        return { color, score: total === null ? '—' : `${total}<small>/100</small>`, label: (total === null ? 'Sin puntaje' : 'Decisión') + extra };
+    }
+    if (stage === 'descartado') return { color: 'var(--k-neutral)', score: '✕', label: p.data.discard_reason || 'Descartado' };
+    const cls = p.data.cls;
+    return { color: '', score: '', label: cls ? `Calce ${cls.calce || '—'}` : p.data.text ? 'Sin clasificar' : 'Nuevo: clic para escribir' };
+}
+
+function miniActions(p, stage) {
+    const id = escapeHtml(shortId(p));
+    const btn = (action, label, extra = '', cls = 'btn-ghost') => `<button class="btn ${cls} btn-xs" data-action="${action}" data-id="${id}" ${extra}>${label}</button>`;
+    const move = (to, label, cls = 'btn-accent', disabled = false) => btn('problem-stage', label, `data-stage="${to}" ${disabled ? 'disabled' : ''}`, cls);
+    const discard = btn('discard-problem', '✕', 'title="Descartar"', 'btn-ghost danger');
+    if (stage === 'lluvia') return move('ordenar', 'Ordenar →', 'btn-accent', !String(p.data.text || '').trim());
+    if (stage === 'ordenar') return btn('prioritize-one', '🤖', `title="Priorizar con Gemini" ${LOCAL_MODE ? 'disabled' : ''}`) + discard + move('benchmark', 'Benchmark →');
+    if (stage === 'benchmark') return btn('copy-problem-prompt', '📋 Prompt', 'title="Copiar prompt de investigación"') + move('decision', 'Decisión →', 'btn-accent', !p.data.bench);
+    if (stage === 'decision') return btn('decide-problem', '🤖', `title="Puntuar con Gemini" ${LOCAL_MODE ? 'disabled' : ''}`) + discard + move('elegido', 'Elegir ✓');
+    if (stage === 'elegido') return btn('idea-for-problem', '+ Idea de solución', '', 'btn-accent');
+    return move('ordenar', 'Restaurar', 'btn-ghost');
+}
+
 function problemMini(p) {
-    const id = shortId(p);
-    const v = priorityValue(p);
-    const level = v ? PPRIO.LEVELS[v] : null;
-    const prio = p.data.prio || {};
-    const outdated = v && needsPriority(p);
+    const stage = problemStage(p);
+    const badge = miniBadge(p, stage);
+    const c = challengeById(p.data.desafio_id);
+    const tip = stage === 'ordenar' && p.data.prio ? `🤖 ${p.data.prio.motivo || ''}` : stage === 'decision' && p.data.pdec ? `🤖 ${p.data.pdec.recomendacion || ''}` : 'Clic para ver y editar';
     return `
-        <article class="pmini" style="--stage:${level ? level.color : 'var(--border)'}" data-action="problem-open" data-id="${escapeHtml(id)}" tabindex="0" title="${escapeHtml(prio.motivo ? `🤖 ${prio.motivo}` : 'Clic para ver y editar')}">
+        <article class="pmini" style="--stage:${badge.color || 'var(--border)'}" data-action="problem-open" data-id="${escapeHtml(shortId(p))}" tabindex="0" title="${escapeHtml(tip)}">
             <div class="pmini-top">
-                <span class="pmini-score" style="--c:${level ? level.color : 'var(--k-neutral)'}">${v ? `${v}<small>/5</small>` : '—'}</span>
-                <span class="pmini-level">${level ? escapeHtml(level.label) : 'Sin puntaje'}${outdated ? ' ⟳' : ''}</span>
-                <span class="card-id">${escapeHtml(id)}</span>
+                ${badge.score ? `<span class="pmini-score" style="--c:${badge.color || 'var(--k-neutral)'}">${badge.score}</span>` : ''}
+                <span class="pmini-level">${escapeHtml(badge.label)}</span>
+                <span class="card-id">${escapeHtml(shortId(p))}</span>
             </div>
             <p class="pmini-text">${escapeHtml(p.data.text || 'Sin texto')}</p>
-            <p class="pmini-meta">${p.data.desafio_id ? `🎯 ${escapeHtml(p.data.desafio_id)}` : 'Sin desafío'}${p.data.affected ? ` · 👥 ${escapeHtml(p.data.affected)}` : ''}</p>
-            <div class="pmini-actions">
-                <button class="btn btn-ghost btn-xs" data-action="prioritize-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''} title="Priorizar con Gemini">🤖</button>
-                <button class="btn btn-ghost btn-xs danger" data-action="discard-problem" data-id="${escapeHtml(id)}" title="Descartar">✕</button>
-                <button class="btn btn-accent btn-xs" data-action="problem-stage" data-id="${escapeHtml(id)}" data-stage="benchmark">Benchmark →</button>
-            </div>
+            <p class="pmini-challenge">${c ? `🎯 ${escapeHtml(shortId(c))} · ${escapeHtml(c.data.title || '')}` : '🎯 Sin desafío'}</p>
+            ${p.data.affected ? `<p class="pmini-meta">👥 ${escapeHtml(p.data.affected)}</p>` : ''}
+            <div class="pmini-actions">${miniActions(p, stage)}</div>
         </article>`;
 }
 
@@ -862,7 +894,7 @@ function problemBar() {
         const good = list.filter(p => priorityValue(p) >= 4).length;
         return `<div class="ai-bar"><div class="ai-bar-text"><strong>Ordenar: 🔗 similitud → 🤖 priorización → ustedes eligen</strong>
             <span class="pmini-tally">${[5, 4, 3].map(n => `<span class="chip" style="--c:${PPRIO.LEVELS[n].color}">${n} ${escapeHtml(PPRIO.LEVELS[n].label)}: ${list.filter(p => priorityValue(p) === n).length}</span>`).join('')}<span class="chip" style="--c:var(--k-bad)">≤2 No: ${list.filter(p => priorityValue(p) && priorityValue(p) <= 2).length}</span><span class="chip outline">Sin puntaje: ${list.filter(p => !priorityValue(p)).length}</span></span>
-            <span class="form-hint">Clic en una tarjeta para verla y editarla. Pasen al Benchmark los que quieran (no hay máximo).</span></div>
+            <span class="form-hint">Pasen al Benchmark los que quieran (no hay máximo).</span></div>
             <div class="ai-actions">
                 <button class="btn btn-ghost" data-action="problem-similarity" ${LOCAL_MODE || (problemCorr && problemCorr.running) || list.length < 2 ? 'disabled' : ''}>🔗 Similitud (${list.length})</button>
                 <button class="btn btn-ghost" data-action="prioritize-all" ${LOCAL_MODE || aiBatch || !pending ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Priorizar', pending))}</button>
@@ -920,8 +952,9 @@ function renderProblemas() {
             <button class="discard-tab ${problemTab === 'descartado' ? 'active' : ''}" data-action="problem-tab" data-stage="descartado">Descartados (${discarded})</button>
         </div>
         ${problemBar()}
+        <p class="form-hint">Clic en una tarjeta para abrirla completa y editarla.</p>
         ${problemCorrPanel()}
-        ${list.length ? (problemTab === 'ordenar' ? problemGrid(list) : `<div class="rows">${list.map(problemCard).join('')}</div>`) : `
+        ${list.length ? problemGrid(list) : `
             <div class="empty">
                 <div class="empty-icon">💡</div>
                 <strong>${all.length ? 'No hay problemas en esta fase' : 'Todavía no hay problemas'}</strong>
@@ -994,6 +1027,7 @@ const problemActions = {
     'add-problem': () => {
         const id = nextShortId(PRO_PREFIX, 'P');
         problemTab = 'lluvia';
+        problemOpen = id;
         saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: '', text: '', affected: '', reach: '', evidence: '', approach: '', payer: '', out_of_scope: '', stage: 'lluvia' }, nextPosition('setting')));
     },
     'problem-open': (el) => {
