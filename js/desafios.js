@@ -483,6 +483,7 @@ const PDEC = L.PROBLEM_DECISION;
 const PDISCARDED = { id: 'descartado', label: 'Descartados', color: 'var(--k-neutral)', hint: 'Problemas que no siguieron, con su motivo. Se pueden restaurar.' };
 let problemTab = 'lluvia';
 let problemCorr = null; // { running, started, groups, comentario, model }
+let problemOpen = ''; // en Ordenar: la tarjeta compacta que se abrió para editar
 
 function problemStage(p) {
     return p.data.stage || (p.data.bench ? 'benchmark' : 'lluvia');
@@ -640,6 +641,37 @@ function problemCorrPanel() {
                         : `<button class="btn btn-ghost" data-action="dismiss-corr" data-index="${i}">Entendido</button>`}</div>
                 </article>`).join('')}</div>
         </div>`;
+}
+
+// --- Ordenar: tarjetas compactas con el puntaje arriba, para ver todo de una vez ---
+
+function problemMini(p) {
+    const id = shortId(p);
+    const v = priorityValue(p);
+    const level = v ? PPRIO.LEVELS[v] : null;
+    const prio = p.data.prio || {};
+    const outdated = v && needsPriority(p);
+    return `
+        <article class="pmini" style="--stage:${level ? level.color : 'var(--border)'}" data-action="problem-open" data-id="${escapeHtml(id)}" tabindex="0" title="${escapeHtml(prio.motivo ? `🤖 ${prio.motivo}` : 'Clic para ver y editar')}">
+            <div class="pmini-top">
+                <span class="pmini-score" style="--c:${level ? level.color : 'var(--k-neutral)'}">${v ? `${v}<small>/5</small>` : '—'}</span>
+                <span class="pmini-level">${level ? escapeHtml(level.label) : 'Sin puntaje'}${outdated ? ' ⟳' : ''}</span>
+                <span class="card-id">${escapeHtml(id)}</span>
+            </div>
+            <p class="pmini-text">${escapeHtml(p.data.text || 'Sin texto')}</p>
+            <p class="pmini-meta">${p.data.desafio_id ? `🎯 ${escapeHtml(p.data.desafio_id)}` : 'Sin desafío'}${p.data.affected ? ` · 👥 ${escapeHtml(p.data.affected)}` : ''}</p>
+            <div class="pmini-actions">
+                <button class="btn btn-ghost btn-xs" data-action="prioritize-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''} title="Priorizar con Gemini">🤖</button>
+                <button class="btn btn-ghost btn-xs danger" data-action="discard-problem" data-id="${escapeHtml(id)}" title="Descartar">✕</button>
+                <button class="btn btn-accent btn-xs" data-action="problem-stage" data-id="${escapeHtml(id)}" data-stage="benchmark">Benchmark →</button>
+            </div>
+        </article>`;
+}
+
+function problemGrid(list) {
+    return `<div class="pgrid">${list.map(p => shortId(p) === problemOpen
+        ? `<div class="pgrid-open">${problemCard(p)}<button class="btn btn-ghost" data-action="problem-open" data-id="">Cerrar ▲</button></div>`
+        : problemMini(p)).join('')}</div>`;
 }
 
 // --- Tarjeta de un problema según su fase ---
@@ -829,7 +861,8 @@ function problemBar() {
         const pending = list.filter(needsPriority).length;
         const good = list.filter(p => priorityValue(p) >= 4).length;
         return `<div class="ai-bar"><div class="ai-bar-text"><strong>Ordenar: 🔗 similitud → 🤖 priorización → ustedes eligen</strong>
-            <span class="form-hint">Puntaje 1–5: 5 sí · 4 probable · 3 tal vez · 2 o menos no. Pasen al Benchmark los que quieran (no hay máximo).</span></div>
+            <span class="pmini-tally">${[5, 4, 3].map(n => `<span class="chip" style="--c:${PPRIO.LEVELS[n].color}">${n} ${escapeHtml(PPRIO.LEVELS[n].label)}: ${list.filter(p => priorityValue(p) === n).length}</span>`).join('')}<span class="chip" style="--c:var(--k-bad)">≤2 No: ${list.filter(p => priorityValue(p) && priorityValue(p) <= 2).length}</span><span class="chip outline">Sin puntaje: ${list.filter(p => !priorityValue(p)).length}</span></span>
+            <span class="form-hint">Clic en una tarjeta para verla y editarla. Pasen al Benchmark los que quieran (no hay máximo).</span></div>
             <div class="ai-actions">
                 <button class="btn btn-ghost" data-action="problem-similarity" ${LOCAL_MODE || (problemCorr && problemCorr.running) || list.length < 2 ? 'disabled' : ''}>🔗 Similitud (${list.length})</button>
                 <button class="btn btn-ghost" data-action="prioritize-all" ${LOCAL_MODE || aiBatch || !pending ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Priorizar', pending))}</button>
@@ -888,7 +921,7 @@ function renderProblemas() {
         </div>
         ${problemBar()}
         ${problemCorrPanel()}
-        ${list.length ? `<div class="rows">${list.map(problemCard).join('')}</div>` : `
+        ${list.length ? (problemTab === 'ordenar' ? problemGrid(list) : `<div class="rows">${list.map(problemCard).join('')}</div>`) : `
             <div class="empty">
                 <div class="empty-icon">💡</div>
                 <strong>${all.length ? 'No hay problemas en esta fase' : 'Todavía no hay problemas'}</strong>
@@ -963,8 +996,13 @@ const problemActions = {
         problemTab = 'lluvia';
         saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: '', text: '', affected: '', reach: '', evidence: '', approach: '', payer: '', out_of_scope: '', stage: 'lluvia' }, nextPosition('setting')));
     },
+    'problem-open': (el) => {
+        problemOpen = problemOpen === el.dataset.id ? '' : el.dataset.id;
+        render();
+    },
     'problem-tab': (el) => {
         problemTab = el.dataset.stage;
+        problemOpen = '';
         render();
     },
     'problem-stage': async (el) => {
