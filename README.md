@@ -42,8 +42,12 @@ El proceso parte por el problema, no por la solución, y la IA hace el trabajo p
       *Fusionar* crea uno nuevo y descarta los originales). 🤖 *Priorizar* da el **primer puntaje,
       1–5** (`PROBLEM_PRIORITY`): 5 sí · 4 probable · 3 tal vez · 2 o menos no. Sin máximo: cada uno
       pasa con *Benchmark →*, o todos los ≥4 con un botón. En todas las fases los problemas se ven como tarjetas compactas (problema como título, desafío y el estado o puntaje de la fase arriba); clic para abrir y editar.
-   3. **Benchmark**: delimitación (alcance, qué abordaremos, qué queda fuera, quién pagaría,
-      evidencia) → *Copiar prompt* → IA investigadora → pegar informe → 🤖 matriz (`PROBLEM_BENCHMARK`).
+   3. **Benchmark**: 1) *Copiar prompt* (la delimitación opcional lo afina) → IA investigadora;
+      2) pegar el informe: Gemini **llena la matriz solo** (`PROBLEM_BENCHMARK`). El prompt trata el
+      problema como **hipótesis del equipo**, pide roles de actores, magnitud separada, una tabla
+      comparable de 5–8 soluciones (≥3 latinoamericanas), y reglas de evidencia (fecha de corte,
+      jerarquía de fuentes, referencia por cifra, hechos vs. inferencias). La matriz muestra arriba si
+      la hipótesis está respaldada y la confiabilidad del informe, y al final qué validar en terreno.
    4. **Decisión**: 🤖 *Puntuar* da el **segundo puntaje**, con el benchmark (`PROBLEM_DECISION`):
       magnitud, alineación, alcance en Latinoamérica, oportunidad y acceso a validar, 1–5 cada uno,
       total sobre 100. El equipo elige con *Elegir ✓*.

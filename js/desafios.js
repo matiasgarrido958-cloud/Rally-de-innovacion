@@ -397,26 +397,42 @@ function problemResearchPrompt(p) {
         ['Alcance (a cuántos y dónde)', d.reach], ['Qué abordaremos', d.approach], ['Qué queda fuera', d.out_of_scope],
         ['Quién pagaría', d.payer], ['Dato o evidencia', d.evidence]
     ].filter(([, v]) => String(v || '').trim()).map(([k, v]) => `- ${k}: ${v}`).join('\n');
-    return `Actúa como analista de vigilancia tecnológica y de mercado. Investiga en profundidad, con búsqueda web y fuentes reales, el PROBLEMA que describe un equipo universitario de ingeniería del Rally Latinoamericano de Innovación (sede ${L.SEDE_COUNTRY}). Todavía no tienen solución: necesitan entender el problema y lo que ya existe, en ${L.SEDE_COUNTRY} y en el resto de Latinoamérica, porque la solución debe poder adaptarse a varios países de la región.
+    const country = L.SEDE_COUNTRY;
+    return `Actúa como analista de vigilancia tecnológica y de mercado. Investiga en profundidad, con búsqueda web y fuentes reales, el PROBLEMA que plantea un equipo universitario de ingeniería del Rally Latinoamericano de Innovación (sede ${country}). Todavía no tienen solución: necesitan entender el problema y lo que ya existe, en ${country} y en el resto de Latinoamérica, porque la solución debe poder adaptarse a varios países de la región.
 
 CONTEXTO
 ${lines}
 
-QUÉ NECESITO (una sección por punto)
-1. A cuántos afecta: cifras clave con fuente y año (${L.SEDE_COUNTRY}, Latinoamérica y mundo).
-2. Dónde ocurre: países o regiones donde es relevante.
-3. Causas principales del problema.
-4. Quién paga hoy: quién financia soluciones (Estado, municipios, empresas, usuarios, fondos), con ejemplos.
-5. Qué se hace en el mundo: entre 5 y 8 soluciones existentes con nombre, país, enlace y qué hacen.
-6. Brechas y oportunidades: qué no resuelven bien esas soluciones.
-7. Tendencia: si el tema está en crecimiento, estable o en baja, con datos.
-8. Normativa, políticas, programas o fondos relacionados en ${L.SEDE_COUNTRY} y en otros países de Latinoamérica.
-9. Riesgos y barreras para implementar soluciones en ${L.SEDE_COUNTRY} y en el resto de Latinoamérica.
-10. Fuentes en formato APA 7.
+HIPÓTESIS INICIAL DEL EQUIPO (no la des por cierta)
+El problema y su causa, tal como los escribió el equipo, son una hipótesis. Investiga si las fuentes la respaldan, qué otras causas intervienen y cómo varía según el tipo o segmento del problema y el territorio. Si la evidencia la contradice, dilo.
 
-REGLAS
-- No inventes empresas, cifras, enlaces ni citas. Si no encuentras algo, escribe "no encontrado".
-- Marca con (verificar) lo que no pudiste confirmar en una fuente primaria.
+QUÉ NECESITO (una sección por punto)
+1. Veredicto sobre la hipótesis: respaldada, parcial o no respaldada, con la evidencia y las otras causas encontradas.
+2. Actores y roles: distingue quién genera el problema, quién lo sufre, posibles usuarios, beneficiarios y quién pagaría. Verifica cada rol con fuentes; no asumas que todos los actores del contexto cumplen el mismo rol.
+3. Magnitud: separa (a) volumen o tamaño del problema, (b) cuántos actores afecta y (c) impactos documentados. Cada cifra con año, territorio, unidad y fuente (${country}, Latinoamérica y mundo).
+4. Dónde ocurre: países o regiones donde es relevante y si cambia según el segmento o tipo del problema.
+5. Causas principales documentadas.
+6. Quién paga hoy: quién financia soluciones (Estado, municipios, empresas, usuarios, fondos), con ejemplos.
+7. Benchmark de 5 a 8 soluciones existentes, en una TABLA con estas columnas:
+   | Identificación (nombre, país, enlace, si sigue operando) | Insumo o segmento que atiende | Funcionamiento | Usuarios y quién paga | Evidencia (escala y resultados, con año y fuente) | Limitaciones documentadas y datos no disponibles | Qué se necesita para adaptarla a ${country} u otro país latinoamericano |
+   Incluye al menos 3 casos latinoamericanos si los hay con evidencia suficiente. Prefiero menos casos bien documentados antes que completar el número con iniciativas mal documentadas.
+8. Brechas y oportunidades: distingue limitaciones documentadas, información no disponible e inferencias tuyas.
+9. Tendencia: por separado, la del problema, la del mercado y la del número de iniciativas, con datos comparables en el tiempo.
+10. Normativa, políticas, programas y fondos en ${country} y en otros países de Latinoamérica: para cada uno, estado (vigente, en tramitación, cerrado o convocatoria abierta), jurisdicción, fecha y vigencia.
+11. Riesgos y barreras para implementar soluciones en ${country} y en el resto de Latinoamérica.
+12. Qué falta validar en terreno: lo que las fuentes web no pueden confirmar (por ejemplo, si los actores necesitan o adoptarían una solución) y con quién validarlo.
+13. Fuentes en formato APA 7.
+
+REGLAS DE EVIDENCIA
+- Fecha de corte: indica la fecha en que hiciste la búsqueda. Prioriza información reciente; si usas una fuente antigua porque es la mejor disponible, indica su antigüedad.
+- Jerarquía de fuentes: prioriza organismos públicos, estadísticas oficiales, estudios académicos y documentos técnicos. Usa las páginas de las propias iniciativas para describir cómo operan y marca sus resultados como (autorreportado).
+- Trazabilidad: cada cifra y afirmación relevante lleva su referencia y enlace directo al documento que la respalda, además de la bibliografía final.
+- Comparabilidad: indica año, territorio, unidad, definición y alcance de cada dato. No compares como equivalentes cifras con bases distintas.
+- Corroboración: busca confirmación independiente de las cifras centrales y de los resultados de las soluciones; si no existe, dilo.
+- Separa hechos documentados, declaraciones de las organizaciones e inferencias tuyas (márcalas como (inferencia)).
+- Ausencias: escribe "no se encontró evidencia en las fuentes consultadas"; no concluyas que algo no existe.
+- Contradicciones: muestra las discrepancias relevantes entre fuentes y explica si se deben a fechas, definiciones o métodos distintos.
+- No inventes empresas, cifras, enlaces ni citas.
 - Responde en español.`;
 }
 
@@ -457,22 +473,46 @@ function classHtml(p) {
         <div class="ai-actions"><button class="btn btn-ghost" data-action="classify-one" data-id="${escapeHtml(shortId(p))}" ${LOCAL_MODE || !challenges().length ? 'disabled' : ''}>🤖 ${cls ? 'Clasificar de nuevo' : 'Clasificar'}</button></div>`;
 }
 
-function benchHtml(p) {
+function benchLevel(field, value) {
+    const color = ((PBENCH.LEVELS || {})[field] || {})[String(value || '').toLowerCase()];
+    return value ? `<span class="chip" style="--c:${color || 'var(--k-neutral)'}">${escapeHtml(value)}</span>` : '';
+}
+
+function benchMatrix(p) {
     const b = p.data.bench;
+    if (!b) return '';
+    const top = ['hipotesis', 'confiabilidad'];
+    return `
+        <div class="bench-matrix">
+            <div class="bench-head">
+                <span>Hipótesis del equipo: ${benchLevel('hipotesis', b.hipotesis) || '—'}</span>
+                <span>Confiabilidad: ${benchLevel('confiabilidad', b.confiabilidad) || '—'}</span>
+            </div>
+            ${PBENCH.FIELDS.filter(f => !top.includes(f.id)).map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${escapeHtml(b[f.id] || '—')}</span></div>`).join('')}
+            <p class="form-hint">🤖 ${escapeHtml(b.model || '')} · ${escapeHtml(clockTime(b.at))}${benchOutdated(p) ? ' · ⟳ el informe cambió: vuelve a procesarlo' : ''}</p>
+        </div>`;
+}
+
+function benchHtml(p, delimitation = '') {
     const id = shortId(p);
     const kind = { kind: 'setting' };
-    const matrix = b ? `
-        <div class="bench-matrix">
-            ${PBENCH.FIELDS.map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${escapeHtml(b[f.id] || '—')}</span></div>`).join('')}
-            <p class="form-hint">🤖 ${escapeHtml(b.model || '')} · ${escapeHtml(clockTime(b.at))}${benchOutdated(p) ? ' · ⟳ el informe cambió: vuelve a procesarlo' : ''}</p>
-        </div>` : '';
+    const report = String(p.data.bench_report || '').trim();
     return `
-        <p class="form-hint">1) Copien el prompt y péguenlo en el modo investigador de Claude, ChatGPT, Gemini o Perplexity. 2) Peguen el informe abajo (pueden pegar varios, uno tras otro). 3) Procesen: Gemini lo resume en la matriz.</p>
-        <div class="ai-actions"><button class="btn btn-ghost" data-action="copy-problem-prompt" data-id="${escapeHtml(id)}">📋 Copiar prompt de investigación</button></div>
-        <textarea class="form-textarea small prompt-box" id="pprompt-${escapeHtml(id)}" rows="6" readonly hidden></textarea>
-        <div class="form-group"><label class="form-label">Informe de la IA investigadora</label>${inlineTextarea(p, 'bench_report', { ...kind, rows: 5, cls: 'small', placeholder: 'Pega aquí el informe completo' })}</div>
-        <div class="ai-actions"><button class="btn btn-accent" data-action="bench-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 Procesar informe → matriz</button></div>
-        ${matrix}`;
+        <div class="bench-step"><span class="step-pill">1</span><div>
+            <strong>Copien el prompt</strong> y péguenlo en el modo investigador de Claude, ChatGPT, Gemini o Perplexity.
+            <div class="ai-actions"><button class="btn btn-accent" data-action="copy-problem-prompt" data-id="${escapeHtml(id)}">📋 Copiar prompt de investigación</button></div>
+            <textarea class="form-textarea small prompt-box" id="pprompt-${escapeHtml(id)}" rows="6" readonly hidden></textarea>
+            ${delimitation}
+        </div></div>
+        <div class="bench-step"><span class="step-pill">2</span><div>
+            <strong>Peguen el informe aquí.</strong> <span class="form-hint inline">Al pegarlo, Gemini llena la matriz solo. Pueden pegar varios informes, uno tras otro.</span>
+            ${inlineTextarea(p, 'bench_report', { ...kind, rows: 4, cls: 'small', placeholder: 'Pega aquí el informe completo' })}
+            ${report ? `<div class="ai-actions"><button class="btn btn-ghost" data-action="bench-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.bench ? 'Procesar de nuevo' : 'Procesar informe'}</button></div>` : ''}
+        </div></div>
+        <div class="bench-step"><span class="step-pill">3</span><div>
+            <strong>Matriz del problema</strong>
+            ${benchMatrix(p) || '<p class="form-hint">Se llena sola al pegar el informe.</p>'}
+        </div></div>`;
 }
 
 // --- 2 · Problemas en fases: Lluvia → Ordenar → Benchmark → Decisión → Elegidos ---
@@ -656,7 +696,7 @@ function miniBadge(p, stage) {
     if (stage === 'benchmark') {
         const done = Boolean(p.data.bench);
         const report = String(p.data.bench_report || '').trim();
-        return { color: done ? 'var(--k-good)' : report ? 'var(--k-s4)' : '', score: done ? '✓' : '…', label: done ? 'Matriz lista' : report ? 'Informe pegado: falta 🤖 matriz' : 'Falta investigar' };
+        return { color: done ? 'var(--k-good)' : report ? 'var(--k-s4)' : '', score: done ? '✓' : '…', label: done ? `Matriz lista${p.data.bench.hipotesis ? ` · hipótesis ${p.data.bench.hipotesis}` : ''}` : report ? 'Informe pegado: falta 🤖 matriz' : 'Falta investigar' };
     }
     if (stage === 'decision' || stage === 'elegido') {
         const color = total === null ? '' : total >= 75 ? 'var(--k-good)' : total >= 55 ? 'var(--k-s4)' : 'var(--k-bad)';
@@ -745,8 +785,9 @@ function problemCard(p) {
             </div>`;
         moves = [moveButton(p, 'lluvia', '← Lluvia'), `<button class="btn btn-ghost danger" data-action="discard-problem" data-id="${escapeHtml(id)}">Descartar</button>`, moveButton(p, 'benchmark', 'Benchmark →', true)];
     } else if (stage === 'benchmark') {
-        body = `${problemSummary(p)}
-            <div class="subgroup"><div class="subgroup-title">Delimitación</div>
+        const filled = ['reach', 'payer', 'approach', 'out_of_scope', 'evidence'].filter(f => String(p.data[f] || '').trim()).length;
+        const delimitation = `
+            <details class="fold"><summary class="section-title">Afinar el prompt: delimitación (${filled}/5, opcional)</summary><div class="section">
                 <div class="row-2">
                     <div class="form-group"><label class="form-label">Alcance: a cuántos y dónde</label>${inlineInput(p, 'reach', { ...kind, placeholder: '12.000 hogares en Maipú (INE 2024)' })}</div>
                     <div class="form-group"><label class="form-label">Quién pagaría</label>${inlineInput(p, 'payer', { ...kind, placeholder: 'Municipio, empresa, usuario, fondo…' })}</div>
@@ -756,13 +797,15 @@ function problemCard(p) {
                     <div class="form-group"><label class="form-label">Qué queda fuera</label>${inlineInput(p, 'out_of_scope', { ...kind, placeholder: 'Lo que no vamos a resolver' })}</div>
                     <div class="form-group"><label class="form-label">Dato o evidencia</label>${inlineInput(p, 'evidence', { ...kind, placeholder: 'Cifra, estudio u observación' })}</div>
                 </div>
-            </div>
-            <div class="subgroup"><div class="subgroup-title">Benchmark del problema</div>${benchHtml(p)}</div>`;
+                <p class="form-hint">Lo que anoten aquí entra en el prompt. Llénenlo antes de copiarlo.</p>
+            </div></details>`;
+        body = `${problemSummary(p)}
+            <div class="subgroup"><div class="subgroup-title">Benchmark del problema</div>${benchHtml(p, delimitation)}</div>`;
         moves = [moveButton(p, 'ordenar', '← Ordenar'), moveButton(p, 'decision', 'Decisión →', true, !p.data.bench)];
     } else if (stage === 'decision') {
         const dec = p.data.pdec;
         body = `${problemSummary(p)}
-            <details class="fold"><summary class="section-title">🔎 Matriz del benchmark</summary><div class="section">${benchHtml(p)}</div></details>
+            <details class="fold"><summary class="section-title">🔎 Matriz del benchmark</summary><div class="section">${benchMatrix(p) || '<p class="form-hint">Sin matriz.</p>'}</div></details>
             <div class="subgroup"><div class="subgroup-title">Decisión ${total !== null ? `<span class="score-big">★ ${total}/100</span>` : ''}</div>
                 ${dec ? `<div class="bench-matrix">${PDEC.CRITERIA.map(c => `<div class="bench-row"><span class="bench-key">${escapeHtml(c.label)} · ${escapeHtml(dec[`p_${c.id}`] || '—')}/5</span><span>${escapeHtml(dec[`m_${c.id}`] || '')}</span></div>`).join('')}
                     <p class="form-hint">🤖 ${escapeHtml(dec.recomendacion || '')} · ${escapeHtml(dec.model || '')} ${escapeHtml(clockTime(dec.at))}${needsProblemDecision(p) ? ' · ⟳ cambió: vuelve a puntuar' : ''}</p></div>` : '<p class="form-hint">Sin puntaje todavía.</p>'}
@@ -773,7 +816,7 @@ function problemCard(p) {
         const linked = ideas().filter(i => i.data.problem_id === id && i.data.status !== 'descartada').length;
         body = `${problemSummary(p)}
             ${total !== null ? `<p class="form-hint">Decisión: ★ ${total}/100</p>` : ''}
-            <details class="fold"><summary class="section-title">🔎 Matriz del benchmark</summary><div class="section">${benchHtml(p)}</div></details>
+            <details class="fold"><summary class="section-title">🔎 Matriz del benchmark</summary><div class="section">${benchMatrix(p) || '<p class="form-hint">Sin matriz.</p>'}</div></details>
             ${p.data.hmw ? `<div class="bench-matrix">${['hmw1', 'hmw2', 'hmw3'].filter(k => p.data.hmw[k]).map(k => `<div class="hmw">💡 ${escapeHtml(p.data.hmw[k])}</div>`).join('')}</div>`
                 : '<p class="form-hint">Generen las preguntas «¿Cómo podríamos…?» para enfocar la lluvia de soluciones.</p>'}
             <div class="ai-actions">
@@ -990,8 +1033,21 @@ async function copyProblemPrompt(id) {
 
 // Al escribir la idea (al salir del campo), Gemini la clasifica sola. Si el equipo
 // elige el desafío a mano, la clasificación automática ya no lo cambia.
+// Al pegar el informe del benchmark se guarda y Gemini llena la matriz sola.
+document.getElementById('content').addEventListener('paste', (e) => {
+    const el = e.target;
+    if (el.dataset && el.dataset.field === 'bench_report' && String(el.dataset.id || '').startsWith(PRO_PREFIX)) setTimeout(() => el.blur(), 50);
+});
 document.getElementById('content').addEventListener('change', (e) => {
     const el = e.target;
+    if (el.dataset && el.dataset.field === 'bench_report' && String(el.dataset.id || '').startsWith(PRO_PREFIX)) {
+        if (LOCAL_MODE) return;
+        setTimeout(() => {
+            const p = getItem(el.dataset.id);
+            if (p && String(p.data.bench_report || '').trim() && (!p.data.bench || benchOutdated(p))) runOne(processBenchmark, p, `Matriz de ${shortId(p)} lista`);
+        }, 300);
+        return;
+    }
     if (el.dataset && el.dataset.field === 'desafio_id' && String(el.dataset.id || '').startsWith(PRO_PREFIX)) {
         updateFields(el.dataset.id, 'setting', { desafio_manual: Boolean(el.value) }, { rerender: false });
         return;

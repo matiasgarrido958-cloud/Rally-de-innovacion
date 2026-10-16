@@ -186,19 +186,29 @@ window.LINEAMIENTOS = {
     // 2 · Problemas, paso Benchmark: el informe de la IA investigadora se pega y Gemini lo
     // compacta en esta matriz estándar (la misma para todos los problemas).
     PROBLEM_BENCHMARK: {
-        TASK: 'Procesa uno o varios informes de investigación (benchmark) sobre un problema y extrae los puntos clave en un formato estándar y breve. Usa solo lo que dicen los informes: si algo no aparece, escribe "sin datos". Conserva las cifras con su fuente y año.',
+        TASK: 'Procesa uno o varios informes de investigación (benchmark) sobre un problema y extrae los puntos clave en un formato estándar y breve. Usa solo lo que dicen los informes: si algo no aparece, escribe "sin datos". Conserva las cifras con su fuente, año, territorio y unidad. No conviertas en hecho lo que el informe marca como inferencia o como dato autorreportado.',
         FIELDS: [
-            { id: 'magnitud', label: 'A cuántos afecta', instruccion: 'Las cifras clave de cuántos afecta, con fuente y año (máximo 3).' },
+            { id: 'hipotesis', label: 'Hipótesis del equipo', instruccion: 'Según el informe, la hipótesis inicial del equipo sobre el problema y su causa está: respaldada, parcial (en parte, o solo para algunos casos o territorios), no respaldada, o sin datos.', opciones: ['respaldada', 'parcial', 'no respaldada', 'sin datos'] },
+            { id: 'hipotesis_motivo', label: 'Por qué', instruccion: 'En una o dos frases: qué evidencia respalda o contradice la hipótesis y qué otras causas aparecen.' },
+            { id: 'confiabilidad', label: 'Confiabilidad del informe', instruccion: 'Calidad de la evidencia del informe: alta (fuentes oficiales o académicas, cifras con referencia y corroboradas), media (mezcla de fuentes, algunas cifras sin corroborar) o baja (pocas fuentes, mayormente autorreportadas o sin referencia).', opciones: ['alta', 'media', 'baja'] },
+            { id: 'actores', label: 'Actores y roles', instruccion: 'Quién genera el problema, quién lo sufre, posibles usuarios, beneficiarios y quién pagaría, en el formato "Rol: actores" separados por " · ".' },
+            { id: 'magnitud', label: 'Magnitud', instruccion: 'Las cifras clave (máximo 3), separando volumen, actores afectados e impactos, cada una con año, territorio y fuente.' },
             { id: 'donde', label: 'Dónde ocurre', instruccion: 'Países o regiones donde el problema es relevante, destacando Chile y Latinoamérica.' },
-            { id: 'causas', label: 'Causas', instruccion: 'Las causas principales del problema (2 a 4, separadas por " · ").' },
-            { id: 'quien_paga', label: 'Quién paga hoy', instruccion: 'Quién financia o pagaría hoy soluciones a este problema (Estado, municipios, empresas, usuarios, fondos), con ejemplos si hay.' },
-            { id: 'soluciones', label: 'Qué se hace en el mundo', instruccion: 'De 3 a 6 soluciones existentes con nombre, país y qué hacen en una frase, separadas por " · ".' },
-            { id: 'brechas', label: 'Brechas y oportunidades', instruccion: 'Qué no resuelven bien las soluciones existentes: brechas u oportunidades para innovar (2 a 4, separadas por " · ").' },
-            { id: 'tendencia', label: 'Tendencia', instruccion: 'Si el tema está en crecimiento, estable o en baja, con el dato que lo respalda.' },
-            { id: 'normativa', label: 'Normativa y programas', instruccion: 'Normativa, políticas, programas o fondos relacionados en Chile y en otros países de Latinoamérica.' },
+            { id: 'causas', label: 'Causas', instruccion: 'Las causas principales documentadas (2 a 4, separadas por " · ").' },
+            { id: 'quien_paga', label: 'Quién paga hoy', instruccion: 'Quién financia hoy soluciones a este problema (Estado, municipios, empresas, usuarios, fondos), con ejemplos si hay.' },
+            { id: 'soluciones', label: 'Soluciones existentes', instruccion: 'De 3 a 6 soluciones existentes, cada una como "Nombre (país): qué hace; quién paga; principal limitación", separadas por " · ". Indica cuáles son latinoamericanas.' },
+            { id: 'brechas', label: 'Brechas y oportunidades', instruccion: 'Qué no resuelven bien las soluciones existentes, según limitaciones documentadas (2 a 4, separadas por " · "). Marca con (inferencia) lo que sea análisis y no dato.' },
+            { id: 'tendencia', label: 'Tendencia', instruccion: 'Tendencia del problema, del mercado y del número de iniciativas (crecimiento, estable o baja), con el dato que respalda cada una o "sin datos".' },
+            { id: 'normativa', label: 'Normativa y fondos', instruccion: 'Normativa, políticas, programas o fondos en Chile y en Latinoamérica, cada uno con su estado (vigente, en tramitación, cerrado o abierto) y año.' },
             { id: 'riesgos', label: 'Riesgos y barreras', instruccion: 'Riesgos o barreras para implementar soluciones en Chile y en el resto de Latinoamérica.' },
+            { id: 'validar', label: 'Qué validar en terreno', instruccion: 'Lo que las fuentes no confirman y el equipo debe validar con entrevistas u observación directa, y con quién (2 a 4, separadas por " · ").' },
             { id: 'fuentes', label: 'Fuentes clave', instruccion: 'Las 3 a 5 fuentes más importantes en formato APA abreviado, separadas por " · ".' }
-        ]
+        ],
+        // Chips de la parte de arriba de la matriz.
+        LEVELS: {
+            hipotesis: { respaldada: 'var(--k-good)', parcial: 'var(--k-s4)', 'no respaldada': 'var(--k-bad)', 'sin datos': 'var(--k-neutral)' },
+            confiabilidad: { alta: 'var(--k-good)', media: 'var(--k-s4)', baja: 'var(--k-bad)' }
+        }
     },
 
     // 2 · Problemas en fases, igual que Soluciones: Lluvia → Ordenar → Benchmark → Decisión → Elegidos.
