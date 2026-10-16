@@ -15,6 +15,10 @@
 //                   para la clave y los ordena alternando flash y lite (versión más
 //                   nueva primero), luego otros y pro. Si uno está saturado, sin cuota
 //                   o falla, usa el siguiente: la cuota gratuita es por modelo.
+//   GROQ_API_KEY    opcional; respaldo si Gemini no responde (caído, saturado o sin
+//                   cuota). Clave gratuita de https://console.groq.com/keys
+//   GROQ_MODELS     opcional; modelos de Groq en orden, separados por comas
+//                   (por defecto llama-3.3-70b-versatile y luego llama-3.1-8b-instant).
 // Deja activado "Verify JWT": solo usuarios con sesión en el workspace pueden usarla.
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -30,6 +34,11 @@ const TOTAL_BUDGET_MS = 35000;
 const CORRELATE_MODEL_TIMEOUT_MS = 45000;
 const CORRELATE_BUDGET_MS = 30000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
+// Respaldo con Groq (API compatible con OpenAI). El plan gratuito limita los tokens
+// por minuto, así que el texto enviado se recorta a GROQ_MAX_PROMPT caracteres.
+const GROQ_DEFAULT_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+const GROQ_TIMEOUT_MS = 25000;
+const GROQ_MAX_PROMPT = 28000;
 let discovered: { at: number; models: string[] } | null = null;
 
 // Tolera valores pegados con espacios, comillas o el prefijo "models/".
@@ -122,6 +131,47 @@ async function askModel(model: string, key: string, prompt: string, schema: unkn
         const data = JSON.parse(text);
         const out = (data.candidates?.[0]?.content?.parts || []).map((p: { text?: string }) => p.text || '').join('');
         return { ok: true, raw: JSON.parse(out) };
+    } catch {
+        return { ok: false, status: 502, detail: 'respuesta no válida', next: true };
+    }
+}
+
+function groqModels() {
+    const list = (Deno.env.get('GROQ_MODELS') || '').split(',').map(m => m.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    return list.length ? list : GROQ_DEFAULT_MODELS;
+}
+
+// El esquema de Gemini (tipos en mayúscula) como texto JSON Schema para la instrucción.
+function schemaText(schema: unknown) {
+    return JSON.stringify(schema).replace(/"type":"([A-Z]+)"/g, (_, t: string) => `"type":"${t.toLowerCase()}"`);
+}
+
+async function askGroq(model: string, key: string, prompt: string, schema: unknown, temperature = 0): Promise<Attempt> {
+    const text = prompt.length > GROQ_MAX_PROMPT ? `${prompt.slice(0, GROQ_MAX_PROMPT)}\n[… texto recortado]` : prompt;
+    let response: Response;
+    let body: string;
+    try {
+        response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+            body: JSON.stringify({
+                model, temperature,
+                response_format: { type: 'json_object' },
+                messages: [
+                    { role: 'system', content: `Responde solo con un objeto JSON válido, en español, que cumpla este JSON Schema (todas las claves de "required", y en los campos con "enum" exactamente uno de esos valores):\n${schemaText(schema)}` },
+                    { role: 'user', content: text }
+                ]
+            }),
+            signal: AbortSignal.timeout(GROQ_TIMEOUT_MS)
+        });
+        body = await response.text();
+    } catch {
+        return { ok: false, status: 504, detail: 'sin respuesta a tiempo', next: true };
+    }
+    if (!response.ok) return { ok: false, status: response.status, detail: body.slice(0, 300), next: response.status !== 401 };
+    try {
+        const data = JSON.parse(body);
+        return { ok: true, raw: JSON.parse(data.choices?.[0]?.message?.content || '') };
     } catch {
         return { ok: false, status: 502, detail: 'respuesta no válida', next: true };
     }
@@ -225,8 +275,8 @@ async function handle(req: Request) {
     if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405);
     if (!await hasSession(req)) return json({ error: 'Inicia sesión en el workspace para usar el filtro con IA.' }, 401);
 
-    const key = Deno.env.get('GEMINI_API_KEY');
-    if (!key) return json({ error: 'Falta el secret GEMINI_API_KEY en Supabase.' }, 500);
+    const key = Deno.env.get('GEMINI_API_KEY') || '';
+    if (!key && !Deno.env.get('GROQ_API_KEY')) return json({ error: 'Falta el secret GEMINI_API_KEY en Supabase.' }, 500);
 
     let body: Record<string, unknown>;
     try {
@@ -264,20 +314,39 @@ async function runModels(key: string, prompt: string, schema: unknown,
     Promise<{ raw: Record<string, Record<string, unknown>>; model: string } | Response> {
     const failures: { model: string; status: number; detail: string }[] = [];
     const started = Date.now();
-    for (const candidate of await modelList(key)) {
-        if (Date.now() - started > budget) break;
+    let fatal = '';
+    // Con respaldo se le da a Gemini la mitad del tiempo, para que Groq alcance a responder
+    // antes de que la página deje de esperar.
+    const groqKey = (Deno.env.get('GROQ_API_KEY') || '').trim();
+    const geminiBudget = groqKey ? budget / 2 : budget;
+    for (const candidate of key ? await modelList(key) : []) {
+        if (Date.now() - started > geminiBudget) break;
         const attempt = await askModel(candidate, key, prompt, schema, temperature, modelTimeout);
         if (attempt.ok) return { raw: attempt.raw, model: candidate };
         failures.push({ model: candidate, status: attempt.status, detail: attempt.detail });
-        if (!attempt.next) return json({ error: `Gemini respondió ${attempt.status} (${candidate}): ${attempt.detail}` }, 502);
+        if (!attempt.next) {
+            fatal = `Gemini respondió ${attempt.status} (${candidate}): ${attempt.detail}`;
+            break;
+        }
     }
+    // Respaldo: si Gemini no respondió, se prueba Groq.
+    if (groqKey) {
+        for (const candidate of groqModels()) {
+            if (Date.now() - started > geminiBudget + modelTimeout + GROQ_TIMEOUT_MS) break;
+            const attempt = await askGroq(candidate, groqKey, prompt, schema, temperature);
+            if (attempt.ok) return { raw: attempt.raw, model: `groq · ${candidate}` };
+            failures.push({ model: `groq · ${candidate}`, status: attempt.status, detail: attempt.detail });
+            if (!attempt.next) break;
+        }
+    }
+    if (fatal && !groqKey) return json({ error: fatal }, 502);
     if (!failures.length) return json({ error: 'Gemini respondió 503: no hubo tiempo de probar modelos. Vuelve a intentar.' }, 503);
     const summary = failures.map(f => `${f.model}: ${f.status}`).join(', ');
     if (failures.every(f => f.status === 429)) {
-        return json({ error: `Se alcanzó el límite gratuito de Gemini en todos los modelos (${summary}). Espera un minuto y vuelve a intentar.` }, 429);
+        return json({ error: `Se alcanzó el límite gratuito en todos los modelos (${summary}). Espera un minuto y vuelve a intentar.` }, 429);
     }
     if (failures.some(f => [429, 503, 504].includes(f.status))) {
-        return json({ error: `Gemini respondió 503: todos los modelos están saturados o sin cuota (${summary}).` }, 503);
+        return json({ error: `Gemini respondió 503: todos los modelos${groqKey ? ', y el respaldo Groq,' : ''} están saturados o sin cuota (${summary}).` }, 503);
     }
     return json({ error: `Ningún modelo respondió (${summary}). Último error: ${failures[failures.length - 1].detail}` }, 502);
 }
