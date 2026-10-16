@@ -518,3 +518,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .pmodal .modal-footer .problem-move { margin: 0; }
 .pmodal .modal-body.problem { background: var(--surface); }
 .pmini-summary { font-size: 12px; color: var(--muted); margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* Ventanas de Desafíos y Problemas: se redibujan seguido; animar solo al abrir. */
+.modal.open.pmodal, .modal.open.pmodal .modal-content { animation: none; }
+.modal.open.pmodal.pmodal-enter { animation: fade 0.2s ease-out; }
+.modal.open.pmodal.pmodal-enter .modal-content { animation: pop 0.2s ease-out; }

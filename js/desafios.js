@@ -742,10 +742,7 @@ function problemMini(p) {
 
 function problemGrid(list) {
     const open = problemOpen && problemById(problemOpen);
-    if (open) setTimeout(() => {
-        const body = document.querySelector('.pmodal .modal-body');
-        if (body) body.scrollTop = problemModalScroll;
-    }, 0);
+    if (!open) modalShown = '';
     return `<div class="pgrid">${list.map(problemMini).join('')}</div>${open ? problemCard(open) : ''}`;
 }
 
@@ -833,7 +830,7 @@ function problemCard(p) {
     const c = challengeById(p.data.desafio_id);
     // Ventana emergente, como en Soluciones. Clic fuera o Esc la cierra.
     return `
-        <div class="modal open pmodal" data-action="problem-open" data-id="">
+        <div class="modal open pmodal ${modalEnter(`p:${id}`)}" data-action="problem-open" data-id="">
             <div class="modal-content" data-action="problem-modal" role="dialog" aria-modal="true">
                 <div class="modal-header">
                     <div>
@@ -852,8 +849,21 @@ function problemCard(p) {
         </div>`;
 }
 
-// La ventana emergente mantiene su scroll aunque la página se vuelva a dibujar.
+// La ventana emergente mantiene su scroll aunque la página se vuelva a dibujar
+// (mientras trabaja la IA se redibuja cada segundo), y la animación de apertura
+// corre solo la primera vez: si no, la ventana pestañea.
 let problemModalScroll = 0;
+let modalShown = '';
+function modalEnter(key) {
+    const first = key !== modalShown;
+    modalShown = key;
+    if (first) problemModalScroll = 0;
+    setTimeout(() => {
+        const body = document.querySelector('.pmodal .modal-body');
+        if (body) body.scrollTop = problemModalScroll;
+    }, 0);
+    return first ? 'pmodal-enter' : '';
+}
 document.getElementById('content').addEventListener('scroll', (e) => {
     if (e.target.classList && e.target.classList.contains('modal-body') && e.target.closest('.pmodal')) problemModalScroll = e.target.scrollTop;
 }, true);
@@ -924,7 +934,7 @@ function challengeCard(c) {
     const kind = { kind: 'setting' };
     const n = problems(id).length;
     return `
-        <div class="modal open pmodal" data-action="challenge-open" data-id="">
+        <div class="modal open pmodal ${modalEnter(`c:${id}`)}" data-action="challenge-open" data-id="">
             <div class="modal-content" data-action="problem-modal" role="dialog" aria-modal="true">
                 <div class="modal-header">
                     <div>
@@ -969,7 +979,7 @@ function renderDesafios() {
             </div>
         </div>
         ${howToPanel()}
-        ${list.length ? `<p class="form-hint">Clic en una tarjeta para abrirla y editarla.</p><div class="pgrid">${list.map(challengeMini).join('')}</div>${challengeOpen && challengeById(challengeOpen) ? challengeCard(challengeById(challengeOpen)) : ''}` : `
+        ${list.length ? `<p class="form-hint">Clic en una tarjeta para abrirla y editarla.</p><div class="pgrid">${list.map(challengeMini).join('')}</div>${challengeOpen && challengeById(challengeOpen) ? challengeCard(challengeById(challengeOpen)) : ((modalShown = ''), '')}` : `
             <div class="empty">
                 <div class="empty-icon">🎯</div>
                 <strong>Todavía no hay desafíos</strong>
