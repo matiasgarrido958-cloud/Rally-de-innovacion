@@ -41,7 +41,7 @@ El proceso parte por el problema, no por la solución, y la IA hace el trabajo p
    2. **Ordenar**: 🔗 *Similitud* compara los problemas (% de similitud, si conviene fusionar o no, y
       *Fusionar* crea uno nuevo y descarta los originales). 🤖 *Priorizar* da el **primer puntaje,
       1–5** (`PROBLEM_PRIORITY`): 5 sí · 4 probable · 3 tal vez · 2 o menos no. Sin máximo: cada uno
-      pasa con *Benchmark →*, o todos los ≥4 con un botón. En todas las fases los problemas se ven como tarjetas compactas (problema como título, desafío y el estado o puntaje de la fase arriba); clic para abrir y editar.
+      pasa con *Benchmark →*, o todos los ≥4 con un botón. En todas las fases los problemas se ven como tarjetas compactas (problema como título, desafío y el estado o puntaje de la fase arriba); clic para abrir una ventana emergente y editar (× o Esc cierra).
    3. **Benchmark**: 1) *Copiar prompt* (la delimitación opcional lo afina) → IA investigadora;
       2) pegar el informe: Gemini **llena la matriz solo** (`PROBLEM_BENCHMARK`). El prompt trata el
       problema como **hipótesis del equipo**, pide roles de actores, magnitud separada, una tabla

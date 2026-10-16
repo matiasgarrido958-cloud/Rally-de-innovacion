@@ -741,17 +741,18 @@ function problemMini(p) {
 }
 
 function problemGrid(list) {
-    return `<div class="pgrid">${list.map(p => shortId(p) === problemOpen
-        ? `<div class="pgrid-open">${problemCard(p)}</div>`
-        : problemMini(p)).join('')}</div>`;
+    const open = problemOpen && problemById(problemOpen);
+    if (open) setTimeout(() => {
+        const body = document.querySelector('.pmodal .modal-body');
+        if (body) body.scrollTop = problemModalScroll;
+    }, 0);
+    return `<div class="pgrid">${list.map(problemMini).join('')}</div>${open ? problemCard(open) : ''}`;
 }
 
 // --- Tarjeta de un problema según su fase ---
 
 function problemSummary(p) {
-    const c = challengeById(p.data.desafio_id);
-    return `<p class="problem-text">${escapeHtml(p.data.text || 'Sin texto')}</p>
-        <p class="form-hint">${p.data.affected ? `👥 ${escapeHtml(p.data.affected)} · ` : ''}${c ? `🎯 ${escapeHtml(shortId(c))} ${escapeHtml(c.data.title || '')}` : 'Sin desafío'}</p>`;
+    return p.data.affected ? `<p class="form-hint">👥 ${escapeHtml(p.data.affected)}</p>` : '';
 }
 
 function stageButtons(p, buttons) {
@@ -828,18 +829,44 @@ function problemCard(p) {
         body = `${problemSummary(p)}<div class="req warn">Descartado: ${escapeHtml(p.data.discard_reason || 'sin motivo')}</div>`;
         moves = [moveButton(p, 'ordenar', 'Restaurar a Ordenar')];
     }
+    const st = findOption([...PSTAGES, PDISCARDED], stage);
+    const c = challengeById(p.data.desafio_id);
+    // Ventana emergente, como en Soluciones. Clic fuera o Esc la cierra.
     return `
-        <div class="vsrc problem">
-            <div class="vsrc-head">
-                <span class="vsrc-num">${escapeHtml(id)}</span>
-                <span class="step-track">${stage === 'ordenar' || stage === 'benchmark' ? priorityChip(p) : ''}${total !== null && stage !== 'decision' ? `<span class="chip outline">★ ${total}/100</span>` : ''}</span>
-                <button class="row-remove" data-action="problem-open" data-id="" aria-label="Cerrar" title="Cerrar">×</button>
+        <div class="modal open pmodal" data-action="problem-open" data-id="">
+            <div class="modal-content" data-action="problem-modal" role="dialog" aria-modal="true">
+                <div class="modal-header">
+                    <div>
+                        <div class="modal-eyebrow">${escapeHtml(id)} <span class="chip" style="--c:${st.color}">${escapeHtml(st.label)}</span>${stage === 'ordenar' || stage === 'benchmark' ? priorityChip(p) : ''}${total !== null && stage !== 'decision' ? `<span class="chip outline">★ ${total}/100</span>` : ''}</div>
+                        <h2 class="modal-title">${escapeHtml(p.data.text || 'Problema nuevo')}</h2>
+                        <p class="form-hint">${c ? `🎯 ${escapeHtml(shortId(c))} · ${escapeHtml(c.data.title || '')}` : '🎯 Sin desafío'}</p>
+                    </div>
+                    <button class="modal-close" data-action="problem-open" data-id="" aria-label="Cerrar" title="Cerrar">×</button>
+                </div>
+                <div class="modal-body problem">${body}</div>
+                <div class="modal-footer">
+                    ${stageButtons(p, moves)}
+                    <button class="btn btn-ghost danger" data-action="delete-problem" data-id="${escapeHtml(id)}">Eliminar</button>
+                </div>
             </div>
-            ${body}
-            ${stageButtons(p, moves)}
-            <div class="problem-delete"><button class="btn btn-ghost danger" data-action="delete-problem" data-id="${escapeHtml(id)}">Eliminar</button></div>
         </div>`;
 }
+
+// La ventana emergente mantiene su scroll aunque la página se vuelva a dibujar.
+let problemModalScroll = 0;
+document.getElementById('content').addEventListener('scroll', (e) => {
+    if (e.target.classList && e.target.classList.contains('modal-body') && e.target.closest('.pmodal')) problemModalScroll = e.target.scrollTop;
+}, true);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && challengeOpen && currentView === 'desafios' && !document.getElementById('modal').classList.contains('open')) {
+        challengeOpen = '';
+        render();
+    }
+    if (e.key === 'Escape' && problemOpen && currentView === 'problemas' && !document.getElementById('modal').classList.contains('open')) {
+        problemOpen = '';
+        render();
+    }
+});
 
 // --- ¿Cómo funciona? (una sola pantalla, en las pestañas 1, 2 y 3) ---
 
@@ -871,30 +898,59 @@ function howToPanel() {
 
 // --- Vistas ---
 
+let challengeOpen = ''; // desafío abierto en la ventana emergente
+
+function challengeMini(c) {
+    const id = shortId(c);
+    const sum = c.data.summary;
+    const n = problems(id).length;
+    const state = sum ? (summaryOutdated(c) ? { color: 'var(--k-s4)', label: '⟳ Resumir de nuevo' } : { color: 'var(--k-good)', label: '✓ Resumen listo' }) : { color: '', label: 'Sin resumen' };
+    return `
+        <article class="pmini" style="--stage:${state.color || 'var(--border)'}" data-action="challenge-open" data-id="${escapeHtml(id)}" tabindex="0" title="Clic para ver y editar">
+            <div class="pmini-top">
+                <span class="pmini-level">${escapeHtml(state.label)}</span>
+                <span class="card-id">${escapeHtml(id)}</span>
+            </div>
+            <p class="pmini-text">${escapeHtml(c.data.title || 'Desafío sin título')}</p>
+            ${c.data.org ? `<p class="pmini-challenge">🏢 ${escapeHtml(c.data.org)}</p>` : ''}
+            ${sum && sum.resumen ? `<p class="pmini-summary">${escapeHtml(sum.resumen)}</p>` : ''}
+            <p class="pmini-meta">💡 ${n} problema(s)</p>
+        </article>`;
+}
+
 function challengeCard(c) {
     const id = shortId(c);
     const sum = c.data.summary;
     const kind = { kind: 'setting' };
     const n = problems(id).length;
     return `
-        <section class="panel challenge">
-            <div class="panel-head">
-                <h2><span class="mono">${escapeHtml(id)}</span> ${escapeHtml(c.data.title || 'Desafío sin título')}</h2>
-                <span class="form-hint">${n ? `${n} problema(s) en la pestaña 2` : ''}</span>
-                <button class="row-remove" data-action="delete-challenge" data-id="${escapeHtml(id)}" aria-label="Eliminar desafío">×</button>
+        <div class="modal open pmodal" data-action="challenge-open" data-id="">
+            <div class="modal-content" data-action="problem-modal" role="dialog" aria-modal="true">
+                <div class="modal-header">
+                    <div>
+                        <div class="modal-eyebrow">${escapeHtml(id)}${n ? ` <span class="chip outline">${n} problema(s) en la pestaña 2</span>` : ''}</div>
+                        <h2 class="modal-title">${escapeHtml(c.data.title || 'Desafío nuevo')}</h2>
+                    </div>
+                    <button class="modal-close" data-action="challenge-open" data-id="" aria-label="Cerrar" title="Cerrar">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="row-2">
+                        <div class="form-group"><label class="form-label">Nombre del desafío</label>${inlineInput(c, 'title', { ...kind, placeholder: 'Como viene en las bases' })}</div>
+                        <div class="form-group"><label class="form-label">ONG o empresa (opcional)</label>${inlineInput(c, 'org', { ...kind, placeholder: 'Quién lo propone' })}</div>
+                    </div>
+                    <div class="form-group"><label class="form-label">Texto de las bases (opcional, mejora el resumen)</label>${inlineTextarea(c, 'description', { ...kind, rows: 3, cls: 'small', placeholder: 'Pega aquí el texto del desafío si lo tienen' })}</div>
+                    ${sum ? `
+                        <div class="bench-matrix">
+                            ${CSUM.FIELDS.map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${escapeHtml(sum[f.id] || '—')}</span></div>`).join('')}
+                            <p class="form-hint">🤖 ${escapeHtml(sum.model || '')} · ${escapeHtml(clockTime(sum.at))}${summaryOutdated(c) ? ' · ⟳ el desafío cambió: vuelve a resumir' : ''}</p>
+                        </div>` : '<p class="form-hint">Sin resumen todavía.</p>'}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-accent" data-action="summarize-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE || !String(c.data.title || '').trim() ? 'disabled' : ''}>🤖 ${sum ? 'Resumir de nuevo' : 'Resumir con IA'}</button>
+                    <button class="btn btn-ghost danger" data-action="delete-challenge" data-id="${escapeHtml(id)}">Eliminar</button>
+                </div>
             </div>
-            <div class="row-2">
-                <div class="form-group"><label class="form-label">Nombre del desafío</label>${inlineInput(c, 'title', { ...kind, placeholder: 'Como viene en las bases' })}</div>
-                <div class="form-group"><label class="form-label">ONG o empresa (opcional)</label>${inlineInput(c, 'org', { ...kind, placeholder: 'Quién lo propone' })}</div>
-            </div>
-            <div class="form-group"><label class="form-label">Texto de las bases (opcional, mejora el resumen)</label>${inlineTextarea(c, 'description', { ...kind, rows: 2, cls: 'small', placeholder: 'Pega aquí el texto del desafío si lo tienen' })}</div>
-            ${sum ? `
-                <div class="bench-matrix">
-                    ${CSUM.FIELDS.map(f => `<div class="bench-row"><span class="bench-key">${escapeHtml(f.label)}</span><span>${escapeHtml(sum[f.id] || '—')}</span></div>`).join('')}
-                    <p class="form-hint">🤖 ${escapeHtml(sum.model || '')} · ${escapeHtml(clockTime(sum.at))}${summaryOutdated(c) ? ' · ⟳ el desafío cambió: vuelve a resumir' : ''}</p>
-                </div>` : ''}
-            <div class="ai-actions"><button class="btn btn-ghost" data-action="summarize-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE || !String(c.data.title || '').trim() ? 'disabled' : ''}>🤖 ${sum ? 'Resumir de nuevo' : 'Resumir con IA'}</button></div>
-        </section>`;
+        </div>`;
 }
 
 function renderDesafios() {
@@ -913,7 +969,7 @@ function renderDesafios() {
             </div>
         </div>
         ${howToPanel()}
-        ${list.length ? list.map(challengeCard).join('') : `
+        ${list.length ? `<p class="form-hint">Clic en una tarjeta para abrirla y editarla.</p><div class="pgrid">${list.map(challengeMini).join('')}</div>${challengeOpen && challengeById(challengeOpen) ? challengeCard(challengeById(challengeOpen)) : ''}` : `
             <div class="empty">
                 <div class="empty-icon">🎯</div>
                 <strong>Todavía no hay desafíos</strong>
@@ -1072,9 +1128,16 @@ document.getElementById('content').addEventListener('click', (e) => {
 const challengeActions = {
     'add-challenge': () => {
         const id = nextShortId(DES_PREFIX, 'DS');
+        challengeOpen = id;
         saveItem(makeItem(`${DES_PREFIX}${id}`, 'setting', { title: '', org: '', description: '', theme: '' }, nextPosition('setting')));
     },
     'delete-challenge': (el) => deleteChallenge(el.dataset.id),
+    'problem-modal': () => {},
+    'challenge-open': (el, e) => {
+        if (!el.dataset.id && e && e.target !== el && !e.target.closest('.modal-close')) return;
+        challengeOpen = challengeOpen === el.dataset.id ? '' : el.dataset.id;
+        render();
+    },
     'summarize-one': (el) => runOne(summarizeChallenge, challengeById(el.dataset.id), `Resumen de ${el.dataset.id} listo`),
     'summarize-all': () => runAiBatch('Resumir', challenges().filter(needsSummary), summarizeChallenge),
     howto: () => toggleHowTo()
@@ -1087,7 +1150,11 @@ const problemActions = {
         problemOpen = id;
         saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: '', text: '', affected: '', reach: '', evidence: '', approach: '', payer: '', out_of_scope: '', stage: 'lluvia' }, nextPosition('setting')));
     },
-    'problem-open': (el) => {
+    'problem-modal': () => {},
+    'problem-open': (el, e) => {
+        // Clic dentro de la ventana (no en el fondo ni en la ×): no cerrar.
+        if (!el.dataset.id && e && e.target !== el && !e.target.closest('.modal-close')) return;
+        problemModalScroll = 0;
         problemOpen = problemOpen === el.dataset.id ? '' : el.dataset.id;
         render();
     },
@@ -1097,6 +1164,7 @@ const problemActions = {
         render();
     },
     'problem-stage': async (el) => {
+        problemOpen = '';
         await setProblemStage(el.dataset.id, el.dataset.stage);
         render();
         showToast(`✓ ${el.dataset.id} → ${findOption(PSTAGES, el.dataset.stage).label}`);
@@ -1104,6 +1172,7 @@ const problemActions = {
     'discard-problem': async (el) => {
         const reason = prompt(`Motivo para descartar ${el.dataset.id}:`, 'No es prioritario');
         if (reason === null) return;
+        problemOpen = '';
         await setProblemStage(el.dataset.id, 'descartado', { discard_reason: reason });
         render();
     },

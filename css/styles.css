@@ -515,3 +515,6 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 .bench-step:last-child { border-bottom: none; }
 .bench-step > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .bench-head { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.pmodal .modal-footer .problem-move { margin: 0; }
+.pmodal .modal-body.problem { background: var(--surface); }
+.pmini-summary { font-size: 12px; color: var(--muted); margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
