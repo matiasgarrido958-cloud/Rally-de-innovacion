@@ -702,7 +702,7 @@ function problemMini(p) {
 
 function problemGrid(list) {
     return `<div class="pgrid">${list.map(p => shortId(p) === problemOpen
-        ? `<div class="pgrid-open">${problemCard(p)}<button class="btn btn-ghost" data-action="problem-open" data-id="">Cerrar ▲</button></div>`
+        ? `<div class="pgrid-open">${problemCard(p)}</div>`
         : problemMini(p)).join('')}</div>`;
 }
 
@@ -790,10 +790,11 @@ function problemCard(p) {
             <div class="vsrc-head">
                 <span class="vsrc-num">${escapeHtml(id)}</span>
                 <span class="step-track">${stage === 'ordenar' || stage === 'benchmark' ? priorityChip(p) : ''}${total !== null && stage !== 'decision' ? `<span class="chip outline">★ ${total}/100</span>` : ''}</span>
-                <button class="row-remove" data-action="delete-problem" data-id="${escapeHtml(id)}" aria-label="Eliminar">×</button>
+                <button class="row-remove" data-action="problem-open" data-id="" aria-label="Cerrar" title="Cerrar">×</button>
             </div>
             ${body}
             ${stageButtons(p, moves)}
+            <div class="problem-delete"><button class="btn btn-ghost danger" data-action="delete-problem" data-id="${escapeHtml(id)}">Eliminar</button></div>
         </div>`;
 }
 
