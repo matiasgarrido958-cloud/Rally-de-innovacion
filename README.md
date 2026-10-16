@@ -159,8 +159,8 @@ La clave de Gemini nunca va en la página: la llamada pasa por la Edge Function
    prueban antes que los detectados. Si todos fallan, la página reintenta tras 5, 15 y 30 s.
 4. **Respaldo con Groq (opcional, gratis)**: agrega el secret `GROQ_API_KEY` (clave de
    https://console.groq.com/keys). Si Gemini no responde (caído, saturado, sin cuota o clave inválida),
-   la función usa Groq: `llama-3.3-70b-versatile` y luego `llama-3.1-8b-instant` (se cambian con
-   `GROQ_MODELS`). El resultado muestra «groq · modelo». Con respaldo, Gemini tiene la mitad del tiempo
+   la función usa Groq. Detecta sola los modelos de texto disponibles (Groq retira modelos seguido)
+   y prueba primero los más capaces y nuevos, por ejemplo `openai/gpt-oss-120b` (se fijan con `GROQ_MODELS`). El resultado muestra «groq · modelo». Con respaldo, Gemini tiene la mitad del tiempo
    para dejarle margen a Groq. El plan gratuito de Groq limita tokens por minuto, por eso el texto
    enviado a Groq se recorta a unos 28.000 caracteres (informes de benchmark muy largos se leen en parte).
 

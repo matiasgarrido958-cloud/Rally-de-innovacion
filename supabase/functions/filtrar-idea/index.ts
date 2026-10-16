@@ -17,8 +17,9 @@
 //                   o falla, usa el siguiente: la cuota gratuita es por modelo.
 //   GROQ_API_KEY    opcional; respaldo si Gemini no responde (caído, saturado o sin
 //                   cuota). Clave gratuita de https://console.groq.com/keys
-//   GROQ_MODELS     opcional; modelos de Groq en orden, separados por comas
-//                   (por defecto llama-3.3-70b-versatile y luego llama-3.1-8b-instant).
+//   GROQ_MODELS     opcional; modelos de Groq en orden, separados por comas. Sin esto,
+//                   la función detecta sola los modelos de texto disponibles en Groq
+//                   (Groq retira modelos seguido) y prueba primero los más capaces.
 // Deja activado "Verify JWT": solo usuarios con sesión en el workspace pueden usarla.
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -36,7 +37,9 @@ const CORRELATE_BUDGET_MS = 30000;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 // Respaldo con Groq (API compatible con OpenAI). El plan gratuito limita los tokens
 // por minuto, así que el texto enviado se recorta a GROQ_MAX_PROMPT caracteres.
-const GROQ_DEFAULT_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+const GROQ_DEFAULT_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
+const GROQ_MAX_MODELS = 3;
+let groqDiscovered: { at: number; models: string[] } | null = null;
 const GROQ_TIMEOUT_MS = 25000;
 const GROQ_MAX_PROMPT = 28000;
 let discovered: { at: number; models: string[] } | null = null;
@@ -136,9 +139,37 @@ async function askModel(model: string, key: string, prompt: string, schema: unkn
     }
 }
 
-function groqModels() {
-    const list = (Deno.env.get('GROQ_MODELS') || '').split(',').map(m => m.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    return list.length ? list : GROQ_DEFAULT_MODELS;
+// Más capaces primero; se descartan los de audio, moderación y embeddings.
+function groqRank(name: string) {
+    const n = name.toLowerCase();
+    const order = [/gpt-oss-120b/, /llama-4-maverick/, /70b|kimi|qwen3?-?32b|minimax/, /llama-4-scout/, /gpt-oss-20b/, /compound/, /8b|mini/];
+    const i = order.findIndex(r => r.test(n));
+    return i === -1 ? order.length - 1 : i;
+}
+
+async function groqModels(key: string) {
+    const fixed = (Deno.env.get('GROQ_MODELS') || '').split(',').map(m => m.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    if (fixed.length) return fixed;
+    if (groqDiscovered && Date.now() - groqDiscovered.at < DISCOVERY_TTL_MS) return groqDiscovered.models;
+    try {
+        const response = await fetch('https://api.groq.com/openai/v1/models', {
+            headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) return GROQ_DEFAULT_MODELS;
+        const data = await response.json();
+        const models = (data.data || [])
+            .filter((m: { id?: string; active?: boolean }) => m.id && m.active !== false
+                && !/whisper|tts|guard|safeguard|embed|playai|orpheus|distil|vision|audio/i.test(m.id))
+            // Más capaz primero y, a igual nivel, el más nuevo.
+            .sort((a: { id: string; created?: number }, b: { id: string; created?: number }) => groqRank(a.id) - groqRank(b.id) || (b.created || 0) - (a.created || 0))
+            .map((m: { id: string }) => m.id)
+            .slice(0, GROQ_MAX_MODELS);
+        if (!models.length) return GROQ_DEFAULT_MODELS;
+        groqDiscovered = { at: Date.now(), models };
+        return models;
+    } catch {
+        return GROQ_DEFAULT_MODELS;
+    }
 }
 
 // El esquema de Gemini (tipos en mayúscula) como texto JSON Schema para la instrucción.
@@ -331,7 +362,7 @@ async function runModels(key: string, prompt: string, schema: unknown,
     }
     // Respaldo: si Gemini no respondió, se prueba Groq.
     if (groqKey) {
-        for (const candidate of groqModels()) {
+        for (const candidate of await groqModels(groqKey)) {
             if (Date.now() - started > geminiBudget + modelTimeout + GROQ_TIMEOUT_MS) break;
             const attempt = await askGroq(candidate, groqKey, prompt, schema, temperature);
             if (attempt.ok) return { raw: attempt.raw, model: `groq · ${candidate}` };
