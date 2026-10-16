@@ -86,7 +86,7 @@ function applyProblemLink(data) {
 function newIdeaForProblem(problemId) {
     const p = problemById(problemId);
     if (!p) return;
-    if (!p.data.bench && !confirm(`${problemId} todavía no tiene benchmark del problema. ¿Proponer una solución igual?`)) return;
+    if (problemStage(p) !== 'elegido' && !confirm(`${problemId} todavía no está elegido (fase ${findOption(L.PROBLEM_STAGES, problemStage(p)).label}). ¿Proponer una solución igual?`)) return;
     ideaTab = 'banco';
     goToView('ideas');
     openIdea(nextIdeaId());
@@ -420,28 +420,6 @@ REGLAS
 - Responde en español.`;
 }
 
-// Pasos de cada problema: cuál está hecho y cuál toca ahora.
-function problemSteps(p) {
-    const d = p.data;
-    const linked = ideas().filter(i => i.data.problem_id === shortId(p) && i.data.status !== 'descartada').length;
-    return [
-        { n: 1, label: 'Idea', done: Boolean(String(d.text || '').trim()) },
-        { n: 2, label: 'Desafío', done: Boolean(d.desafio_id) },
-        { n: 3, label: 'Delimitación', done: ['reach', 'approach', 'payer'].every(k => String(d[k] || '').trim()) },
-        { n: 4, label: 'Benchmark', done: Boolean(d.bench) },
-        { n: 5, label: 'Soluciones', done: linked > 0, linked }
-    ];
-}
-
-function stepFold(p, step, current, title, body) {
-    const key = `${shortId(p)}:${step.n}`;
-    const open = openSteps.has(key) || (current && current.n === step.n && !closedSteps.has(key));
-    return `<details class="fold step-fold" data-step="${escapeHtml(key)}" ${open ? 'open' : ''}>
-        <summary class="section-title">${step.done ? '✓' : step.n} · ${escapeHtml(title)}</summary>
-        <div class="section">${body}</div>
-    </details>`;
-}
-
 function problemCheckHtml(p) {
     const check = p.data.check;
     if (!check) return '';
@@ -497,41 +475,261 @@ function benchHtml(p) {
         ${matrix}`;
 }
 
+// --- 2 · Problemas en fases: Lluvia → Ordenar → Benchmark → Decisión → Elegidos ---
+
+const PSTAGES = L.PROBLEM_STAGES;
+const PPRIO = L.PROBLEM_PRIORITY;
+const PDEC = L.PROBLEM_DECISION;
+const PDISCARDED = { id: 'descartado', label: 'Descartados', color: 'var(--k-neutral)', hint: 'Problemas que no siguieron, con su motivo. Se pueden restaurar.' };
+let problemTab = 'lluvia';
+let problemCorr = null; // { running, started, groups, comentario, model }
+
+function problemStage(p) {
+    return p.data.stage || (p.data.bench ? 'benchmark' : 'lluvia');
+}
+
+function problemsIn(stage) {
+    return problems().filter(p => problemStage(p) === stage);
+}
+
+async function setProblemStage(id, stage, extra = {}) {
+    const p = problemById(id);
+    if (!p) return;
+    await saveItem({ ...p, data: { ...p.data, ...extra, stage } }, { rerender: false });
+}
+
+// Ordenar: puntaje de priorización 1–5 (¿vale la pena investigarlo?).
+function priorityInput(p) {
+    const c = challengeById(p.data.desafio_id);
+    const cls = p.data.cls;
+    return {
+        desafio: c ? challengeBrief(c) : 'sin desafío asignado',
+        problema: p.data.text || '',
+        quien_lo_sufre: p.data.affected || '',
+        clasificacion: cls ? `${cls.desafio || ''} · calce ${cls.calce || ''} · ${cls.motivo || ''}` : ''
+    };
+}
+
+function needsPriority(p) {
+    return String(p.data.text || '').trim() && (!p.data.prio || p.data.prio.hash !== textHash(priorityInput(p)));
+}
+
+async function prioritizeProblem(p) {
+    if (needsClass(p)) await classifyProblem(p);
+    const fresh = getItem(p.id) || p;
+    const input = priorityInput(fresh);
+    const result = await askGemini(PPRIO, input);
+    const now = getItem(p.id) || fresh;
+    await saveItem({ ...now, data: { ...now.data, prio: { ...result.campos, model: result.model, at: new Date().toISOString(), hash: textHash(input) } } }, { rerender: false });
+}
+
+function priorityValue(p) {
+    return Number((p.data.prio || {}).prioridad) || 0;
+}
+
+function priorityChip(p) {
+    const v = priorityValue(p);
+    if (!v) return '';
+    const level = PPRIO.LEVELS[v];
+    return `<span class="chip" style="--c:${level.color}" title="${escapeHtml((p.data.prio || {}).motivo || '')}">🤖 ${v}/5 ${escapeHtml(level.label)}</span>`;
+}
+
+// Decisión: puntaje con el benchmark, sobre 100.
+function decisionProblemInput(p) {
+    const c = challengeById(p.data.desafio_id);
+    const d = p.data;
+    return {
+        desafio: c ? challengeBrief(c) : '',
+        problema: [d.text, d.affected && `Lo sufre: ${d.affected}`, d.reach && `Alcance: ${d.reach}`, d.approach && `Abordaremos: ${d.approach}`, d.out_of_scope && `Fuera: ${d.out_of_scope}`, d.payer && `Pagaría: ${d.payer}`].filter(Boolean).join('. '),
+        benchmark: PBENCH.FIELDS.map(f => d.bench && d.bench[f.id] ? `${f.label}: ${d.bench[f.id]}` : '').filter(Boolean).join('\n'),
+        equipo: typeof teamText === 'function' ? teamText() : ''
+    };
+}
+
+function decisionProblemFields() {
+    return [
+        ...PDEC.CRITERIA.flatMap(c => [
+            { id: `p_${c.id}`, instruccion: `Puntaje de 1 a 5 en «${c.label}»: ${c.instruccion}`, opciones: ['1', '2', '3', '4', '5'] },
+            { id: `m_${c.id}`, instruccion: `Por qué ese puntaje en ${c.label}, en una frase de máximo 20 palabras.` }
+        ]),
+        { id: 'recomendacion', instruccion: 'En una frase: conviene o no elegir este problema, y por qué.' }
+    ];
+}
+
+async function decideProblem(p) {
+    const input = decisionProblemInput(p);
+    const result = await askGemini(PDEC, input, decisionProblemFields());
+    const now = getItem(p.id) || p;
+    await saveItem({ ...now, data: { ...now.data, pdec: { ...result.campos, model: result.model, at: new Date().toISOString(), hash: textHash(input) } } }, { rerender: false });
+}
+
+function needsProblemDecision(p) {
+    return Boolean(p.data.bench) && (!p.data.pdec || p.data.pdec.hash !== textHash(decisionProblemInput(p)));
+}
+
+function problemTotal(p) {
+    const dec = p.data.pdec;
+    if (!dec) return null;
+    const values = PDEC.CRITERIA.map(c => Number(dec[`p_${c.id}`]) || 0);
+    if (!values.some(Boolean)) return null;
+    return Math.round(values.reduce((a, b) => a + b, 0) / (PDEC.CRITERIA.length * 5) * 100);
+}
+
+// Similitud entre problemas: el modo «correlacionar» de la función.
+async function findProblemSimilarity() {
+    if (LOCAL_MODE) return showToast('Usa Gemini: necesita Supabase, no funciona en modo local', 'warning');
+    const list = problemsIn('ordenar').filter(p => String(p.data.text || '').trim());
+    if (list.length < 2) return showToast('Se necesitan al menos 2 problemas en Ordenar', 'warning');
+    problemCorr = { running: true, started: Date.now(), groups: [] };
+    const timer = setInterval(requestRender, 1000);
+    render();
+    try {
+        const result = await supabaseFunction(TRIAGE.FUNCTION, {
+            mode: 'correlacionar', etapa: 'problemas (todavía sin solución)',
+            ideas: list.map(p => {
+                const c = challengeById(p.data.desafio_id);
+                return { id: shortId(p), campos: { Problema: p.data.text || '', 'Quién lo sufre': p.data.affected || '', 'Desafío': c ? c.data.title || '' : '' } };
+            })
+        }, false, 100000);
+        problemCorr = { running: false, groups: (result.grupos || []).map(g => ({ ...g, done: false })), comentario: result.comentario || '', model: result.model || '' };
+        showToast(problemCorr.groups.length ? `🔗 ${problemCorr.groups.length} grupo(s) de problemas parecidos` : '🔗 No hay problemas parecidos', problemCorr.groups.length ? 'success' : 'warning', 6000);
+    } catch (e) {
+        problemCorr = null;
+        showToast(`❌ ${e.message}`, 'error', 9000);
+    } finally {
+        clearInterval(timer);
+        render();
+    }
+}
+
+async function mergeProblems(index) {
+    const g = problemCorr && problemCorr.groups[index];
+    if (!g) return;
+    const sources = g.ids.map(problemById).filter(Boolean);
+    const p = g.propuesta || {};
+    const id = nextShortId(PRO_PREFIX, 'P');
+    await saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', {
+        desafio_id: (sources[0] && sources[0].data.desafio_id) || '', desafio_manual: Boolean(sources[0] && sources[0].data.desafio_manual),
+        text: p.problema || p.titulo || sources.map(x => x.data.text).join(' / '),
+        affected: p.beneficiario || (sources[0] && sources[0].data.affected) || '',
+        reach: '', evidence: '', approach: '', payer: '', out_of_scope: '', stage: 'ordenar', merged_from: g.ids
+    }, nextPosition('setting')), { rerender: false });
+    for (const x of sources) await setProblemStage(shortId(x), 'descartado', { discard_reason: `Fusionado en ${id}` });
+    g.done = id;
+    render();
+    showToast(`✓ ${g.ids.join(' + ')} fusionados en ${id}`);
+}
+
+function problemCorrPanel() {
+    if (problemTab !== 'ordenar' || !problemCorr) return '';
+    if (problemCorr.running) return `<div class="corr-panel"><p class="form-hint">🔗 Gemini compara los problemas… ${shortDuration(Date.now() - problemCorr.started)}</p></div>`;
+    return `
+        <div class="corr-panel">
+            <div class="corr-panel-head"><strong>Problemas parecidos</strong><span class="form-hint">${escapeHtml(problemCorr.comentario)} · ${escapeHtml(problemCorr.model)}</span></div>
+            <div class="corr-grid">${problemCorr.groups.map((g, i) => `
+                <article class="corr-card ${g.done ? 'done' : ''}">
+                    <div class="corr-head">
+                        <span class="chip corr-pct" style="--c:${g.similitud >= 70 ? 'var(--k-good)' : g.similitud >= 50 ? 'var(--k-s4)' : 'var(--k-neutral)'}">${Number(g.similitud) || 0}% similar</span>
+                        <span class="corr-sources">${g.ids.map(id => `<span class="chip outline">${escapeHtml(id)}</span>`).join('<span class="form-hint">+</span>')}</span>
+                    </div>
+                    <p class="corr-relation">${escapeHtml(g.relacion || '')}</p>
+                    ${g.fusionar ? `<div class="req ok"><strong>Conviene fusionar:</strong> ${escapeHtml(g.analisis || '')}</div>${g.propuesta && (g.propuesta.problema || g.propuesta.titulo) ? `<div class="corr-proposal"><strong>${escapeHtml(g.propuesta.problema || g.propuesta.titulo)}</strong></div>` : ''}`
+                        : `<div class="req warn"><strong>No conviene fusionar:</strong> ${escapeHtml(g.analisis || '')}</div>`}
+                    <div class="ai-actions">${g.done ? `<span class="form-hint">✓ Fusionados en ${escapeHtml(g.done)}</span>`
+                        : g.fusionar ? `<button class="btn btn-accent" data-action="merge-problems" data-index="${i}">Fusionar</button><button class="btn btn-ghost" data-action="dismiss-corr" data-index="${i}">Ignorar</button>`
+                        : `<button class="btn btn-ghost" data-action="dismiss-corr" data-index="${i}">Entendido</button>`}</div>
+                </article>`).join('')}</div>
+        </div>`;
+}
+
+// --- Tarjeta de un problema según su fase ---
+
+function problemSummary(p) {
+    const c = challengeById(p.data.desafio_id);
+    return `<p class="problem-text">${escapeHtml(p.data.text || 'Sin texto')}</p>
+        <p class="form-hint">${p.data.affected ? `👥 ${escapeHtml(p.data.affected)} · ` : ''}${c ? `🎯 ${escapeHtml(shortId(c))} ${escapeHtml(c.data.title || '')}` : 'Sin desafío'}</p>`;
+}
+
+function stageButtons(p, buttons) {
+    return `<div class="ai-actions problem-move">${buttons.join('')}</div>`;
+}
+
+function moveButton(p, stage, label, primary = false, disabled = false) {
+    return `<button class="btn ${primary ? 'btn-accent' : 'btn-ghost'}" data-action="problem-stage" data-id="${escapeHtml(shortId(p))}" data-stage="${stage}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+}
+
 function problemCard(p) {
     const id = shortId(p);
     const kind = { kind: 'setting' };
-    const steps = problemSteps(p);
-    const current = steps.find(s => !s.done) || null;
-    const [s1, s2, s3, s4, s5] = steps;
-    return `
-        <div class="vsrc problem">
-            <div class="vsrc-head">
-                <span class="vsrc-num">${escapeHtml(id)}</span>
-                <span class="step-track">${steps.map(s => `<span class="step-pill ${s.done ? 'done' : current && current.n === s.n ? 'now' : ''}">${s.done ? '✓' : s.n} ${escapeHtml(s.label)}</span>`).join('')}</span>
-                <button class="row-remove" data-action="delete-problem" data-id="${escapeHtml(id)}" aria-label="Eliminar">×</button>
-            </div>
-            ${stepFold(p, s1, current, 'Idea o problema (sin solución todavía)', `
-                ${inlineTextarea(p, 'text', { ...kind, rows: 2, cls: 'small', placeholder: 'Qué queremos abordar. Ej.: usar el desperdicio textil como materia prima' })}
-                <div class="form-group"><label class="form-label">Quién lo sufre</label>${inlineInput(p, 'affected', { ...kind, placeholder: 'Grupo concreto de personas u organizaciones' })}</div>`)}
-            ${stepFold(p, s2, current, 'Desafío (🤖 automático)', classHtml(p))}
-            ${stepFold(p, s3, current, 'Delimitación del problema', `
+    const stage = problemStage(p);
+    const prio = p.data.prio;
+    const total = problemTotal(p);
+    let body = '';
+    let moves = [];
+    if (stage === 'lluvia') {
+        body = `${inlineTextarea(p, 'text', { ...kind, rows: 2, cls: 'small', placeholder: 'El problema en una línea, sin solución. Ej.: la ropa usada termina en vertederos' })}
+            <div class="form-group"><label class="form-label">Quién lo sufre</label>${inlineInput(p, 'affected', { ...kind, placeholder: 'Grupo concreto de personas u organizaciones' })}</div>
+            ${p.data.cls ? `<p class="form-hint">🤖 ${escapeHtml(p.data.desafio_id || 'Sin desafío')} · calce ${escapeHtml(p.data.cls.calce || '—')}</p>` : ''}`;
+        moves = [moveButton(p, 'ordenar', 'Ordenar →', true, !String(p.data.text || '').trim())];
+    } else if (stage === 'ordenar') {
+        body = `${inlineTextarea(p, 'text', { ...kind, rows: 2, cls: 'small' })}
+            <div class="form-group"><label class="form-label">Quién lo sufre</label>${inlineInput(p, 'affected', kind)}</div>
+            <div class="subgroup"><div class="subgroup-title">Desafío</div>${classHtml(p)}</div>
+            <div class="subgroup"><div class="subgroup-title">Priorización ${priorityChip(p)}</div>
+                ${prio ? `<p class="form-hint">🤖 ${escapeHtml(prio.motivo || '')}${prio.mejorar ? `<br><strong>Para subir:</strong> ${escapeHtml(prio.mejorar)}` : ''}${needsPriority(p) ? ' · ⟳ cambió: vuelve a priorizar' : ''}</p>` : '<p class="form-hint">Sin priorizar todavía.</p>'}
+                <div class="ai-actions"><button class="btn btn-ghost" data-action="prioritize-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${prio ? 'Priorizar de nuevo' : 'Priorizar'}</button></div>
+            </div>`;
+        moves = [moveButton(p, 'lluvia', '← Lluvia'), `<button class="btn btn-ghost danger" data-action="discard-problem" data-id="${escapeHtml(id)}">Descartar</button>`, moveButton(p, 'benchmark', 'Benchmark →', true)];
+    } else if (stage === 'benchmark') {
+        body = `${problemSummary(p)}
+            <div class="subgroup"><div class="subgroup-title">Delimitación</div>
                 <div class="row-2">
                     <div class="form-group"><label class="form-label">Alcance: a cuántos y dónde</label>${inlineInput(p, 'reach', { ...kind, placeholder: '12.000 hogares en Maipú (INE 2024)' })}</div>
                     <div class="form-group"><label class="form-label">Quién pagaría</label>${inlineInput(p, 'payer', { ...kind, placeholder: 'Municipio, empresa, usuario, fondo…' })}</div>
                 </div>
                 <div class="form-group"><label class="form-label">Qué abordaremos</label>${inlineTextarea(p, 'approach', { ...kind, rows: 2, cls: 'small', placeholder: 'Qué parte del problema atacamos (una causa, una etapa o un grupo) y por qué' })}</div>
-                <div class="form-group"><label class="form-label">Qué queda fuera</label>${inlineInput(p, 'out_of_scope', { ...kind, placeholder: 'Lo que no vamos a resolver' })}</div>
-                <div class="form-group"><label class="form-label">Dato o evidencia</label>${inlineInput(p, 'evidence', { ...kind, placeholder: 'Cifra, estudio u observación de que el problema existe' })}</div>
-                ${problemCheckHtml(p)}
-                <div class="ai-actions"><button class="btn btn-ghost" data-action="check-problem" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.check ? 'Revisar planteamiento de nuevo' : 'Revisar planteamiento (opcional)'}</button></div>`)}
-            ${stepFold(p, s4, current, 'Benchmark del problema', benchHtml(p))}
-            ${stepFold(p, s5, current, 'Soluciones (lluvia de ideas)', `
-                ${p.data.hmw ? `<div class="bench-matrix">${['hmw1', 'hmw2', 'hmw3'].filter(k => p.data.hmw[k]).map(k => `<div class="hmw">💡 ${escapeHtml(p.data.hmw[k])}</div>`).join('')}</div>`
-                    : '<p class="form-hint">Generen las preguntas «¿Cómo podríamos…?» para enfocar la lluvia de ideas, o propongan soluciones directo.</p>'}
-                <div class="ai-actions">
-                    <button class="btn btn-ghost" data-action="hmw-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.hmw ? 'Otras preguntas' : 'Preguntas «¿Cómo podríamos…?»'}</button>
-                    <button class="btn btn-accent" data-action="idea-for-problem" data-id="${escapeHtml(id)}"><svg><use href="#i-plus"/></svg>Idea de solución${s5.linked ? ` (${s5.linked} en curso)` : ''}</button>
-                </div>`)}
+                <div class="row-2">
+                    <div class="form-group"><label class="form-label">Qué queda fuera</label>${inlineInput(p, 'out_of_scope', { ...kind, placeholder: 'Lo que no vamos a resolver' })}</div>
+                    <div class="form-group"><label class="form-label">Dato o evidencia</label>${inlineInput(p, 'evidence', { ...kind, placeholder: 'Cifra, estudio u observación' })}</div>
+                </div>
+            </div>
+            <div class="subgroup"><div class="subgroup-title">Benchmark del problema</div>${benchHtml(p)}</div>`;
+        moves = [moveButton(p, 'ordenar', '← Ordenar'), moveButton(p, 'decision', 'Decisión →', true, !p.data.bench)];
+    } else if (stage === 'decision') {
+        const dec = p.data.pdec;
+        body = `${problemSummary(p)}
+            <details class="fold"><summary class="section-title">🔎 Matriz del benchmark</summary><div class="section">${benchHtml(p)}</div></details>
+            <div class="subgroup"><div class="subgroup-title">Decisión ${total !== null ? `<span class="score-big">★ ${total}/100</span>` : ''}</div>
+                ${dec ? `<div class="bench-matrix">${PDEC.CRITERIA.map(c => `<div class="bench-row"><span class="bench-key">${escapeHtml(c.label)} · ${escapeHtml(dec[`p_${c.id}`] || '—')}/5</span><span>${escapeHtml(dec[`m_${c.id}`] || '')}</span></div>`).join('')}
+                    <p class="form-hint">🤖 ${escapeHtml(dec.recomendacion || '')} · ${escapeHtml(dec.model || '')} ${escapeHtml(clockTime(dec.at))}${needsProblemDecision(p) ? ' · ⟳ cambió: vuelve a puntuar' : ''}</p></div>` : '<p class="form-hint">Sin puntaje todavía.</p>'}
+                <div class="ai-actions"><button class="btn btn-ghost" data-action="decide-problem" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${dec ? 'Puntuar de nuevo' : 'Puntuar'}</button></div>
+            </div>`;
+        moves = [moveButton(p, 'benchmark', '← Benchmark'), `<button class="btn btn-ghost danger" data-action="discard-problem" data-id="${escapeHtml(id)}">Descartar</button>`, moveButton(p, 'elegido', 'Elegir ✓', true)];
+    } else if (stage === 'elegido') {
+        const linked = ideas().filter(i => i.data.problem_id === id && i.data.status !== 'descartada').length;
+        body = `${problemSummary(p)}
+            ${total !== null ? `<p class="form-hint">Decisión: ★ ${total}/100</p>` : ''}
+            <details class="fold"><summary class="section-title">🔎 Matriz del benchmark</summary><div class="section">${benchHtml(p)}</div></details>
+            ${p.data.hmw ? `<div class="bench-matrix">${['hmw1', 'hmw2', 'hmw3'].filter(k => p.data.hmw[k]).map(k => `<div class="hmw">💡 ${escapeHtml(p.data.hmw[k])}</div>`).join('')}</div>`
+                : '<p class="form-hint">Generen las preguntas «¿Cómo podríamos…?» para enfocar la lluvia de soluciones.</p>'}
+            <div class="ai-actions">
+                <button class="btn btn-ghost" data-action="hmw-one" data-id="${escapeHtml(id)}" ${LOCAL_MODE ? 'disabled' : ''}>🤖 ${p.data.hmw ? 'Otras preguntas' : 'Preguntas «¿Cómo podríamos…?»'}</button>
+                <button class="btn btn-accent" data-action="idea-for-problem" data-id="${escapeHtml(id)}"><svg><use href="#i-plus"/></svg>Idea de solución${linked ? ` (${linked} en curso)` : ''}</button>
+            </div>`;
+        moves = [moveButton(p, 'decision', '← Decisión')];
+    } else {
+        body = `${problemSummary(p)}<div class="req warn">Descartado: ${escapeHtml(p.data.discard_reason || 'sin motivo')}</div>`;
+        moves = [moveButton(p, 'ordenar', 'Restaurar a Ordenar')];
+    }
+    return `
+        <div class="vsrc problem">
+            <div class="vsrc-head">
+                <span class="vsrc-num">${escapeHtml(id)}</span>
+                <span class="step-track">${stage === 'ordenar' || stage === 'benchmark' ? priorityChip(p) : ''}${total !== null && stage !== 'decision' ? `<span class="chip outline">★ ${total}/100</span>` : ''}</span>
+                <button class="row-remove" data-action="delete-problem" data-id="${escapeHtml(id)}" aria-label="Eliminar">×</button>
+            </div>
+            ${body}
+            ${stageButtons(p, moves)}
         </div>`;
 }
 
@@ -557,7 +755,7 @@ function howToPanel() {
             <p class="form-hint">Todo es en orden. Cada tarjeta muestra el paso que toca; 🤖 = lo hace Gemini. Pensamos soluciones adaptables a varios países de Latinoamérica.</p>
             <div class="howto-grid">
                 ${step(1, '1 · Desafíos', ['Escriban el nombre de cada desafío (el texto de las bases es opcional).', '🤖 Resumen: de qué trata, qué incluye y qué queda fuera.'])}
-                ${step(2, '2 · Problemas', ['Cada uno anota la idea o problema, sin solución.', '🤖 Se asigna sola al desafío que calza.', 'Delimitación: alcance, qué sí y qué no, quién pagaría.', 'Benchmark: copien el prompt → IA investigadora → peguen el informe → 🤖 matriz.', '🤖 Preguntas «¿Cómo podríamos…?» → lluvia de ideas.'])}
+                ${step(2, '2 · Problemas', ['Lluvia: cada uno anota problemas, sin solución; 🤖 se asignan solos a un desafío.', 'Ordenar: 🔗 similitud y 🤖 priorización 1–5; pasan los que el equipo quiera.', 'Benchmark: delimitación, prompt → IA investigadora → informe → 🤖 matriz.', 'Decisión: 🤖 puntaje con el benchmark → el equipo elige.', 'Elegidos: 🤖 «¿Cómo podríamos…?» → ideas de solución.'])}
                 ${step(3, '3 · Soluciones', ['Lluvia de ideas: anoten todo sin evaluar.', '🤖 Ordenar: % de similitud, fusiones y filtro → máximo 4 finalistas.', 'Benchmark de la solución → 🤖 matriz de innovación (Oslo).', '🤖 Decisión: puntaje con la rúbrica del jurado → el líder elige.', 'Construir: 🤖 ficha prellenada, plan, validación y pitch.'])}
             </div>
         </section>`;
@@ -615,35 +813,86 @@ function renderDesafios() {
             </div>`}`;
 }
 
+function problemBar() {
+    const list = problemsIn(problemTab);
+    if (problemTab === 'lluvia') {
+        const ready = list.filter(p => String(p.data.text || '').trim()).length;
+        const pendingClass = list.filter(needsClass).length;
+        return `<div class="ai-bar"><div class="ai-bar-text"><strong>Lluvia de problemas</strong>
+            <span class="form-hint">Anoten todo, sin evaluar. Al salir del texto, Gemini asigna el desafío. Al terminar, mándenlos a Ordenar.</span></div>
+            <div class="ai-actions">
+                ${pendingClass && challenges().length ? `<button class="btn btn-ghost" data-action="classify-all" ${LOCAL_MODE || aiBatch ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Clasificar', pendingClass))}</button>` : ''}
+                <button class="btn btn-accent" data-action="send-problems" ${ready ? '' : 'disabled'}>Mandar ${ready} a Ordenar →</button>
+            </div></div>`;
+    }
+    if (problemTab === 'ordenar') {
+        const pending = list.filter(needsPriority).length;
+        const good = list.filter(p => priorityValue(p) >= 4).length;
+        return `<div class="ai-bar"><div class="ai-bar-text"><strong>Ordenar: 🔗 similitud → 🤖 priorización → ustedes eligen</strong>
+            <span class="form-hint">Puntaje 1–5: 5 sí · 4 probable · 3 tal vez · 2 o menos no. Pasen al Benchmark los que quieran (no hay máximo).</span></div>
+            <div class="ai-actions">
+                <button class="btn btn-ghost" data-action="problem-similarity" ${LOCAL_MODE || (problemCorr && problemCorr.running) || list.length < 2 ? 'disabled' : ''}>🔗 Similitud (${list.length})</button>
+                <button class="btn btn-ghost" data-action="prioritize-all" ${LOCAL_MODE || aiBatch || !pending ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Priorizar', pending))}</button>
+                ${good ? `<button class="btn btn-accent" data-action="promote-good">Pasar ${good} «Sí/Probable» al Benchmark →</button>` : ''}
+            </div></div>`;
+    }
+    if (problemTab === 'benchmark') {
+        return `<div class="ai-bar"><div class="ai-bar-text"><strong>Benchmark de los problemas</strong>
+            <span class="form-hint">En cada uno: delimitación → copiar prompt → IA investigadora → pegar informe → 🤖 matriz. Listos: ${list.filter(p => p.data.bench).length} de ${list.length}.</span></div></div>`;
+    }
+    if (problemTab === 'decision') {
+        const pending = list.filter(needsProblemDecision).length;
+        const top = list.filter(p => problemTotal(p) !== null).sort((a, b) => problemTotal(b) - problemTotal(a))[0];
+        return `<div class="ai-bar"><div class="ai-bar-text"><strong>Decisión: ¿cuál problema resolvemos?</strong>
+            <span class="form-hint">${top ? `Va primero ${escapeHtml(shortId(top))} (★ ${problemTotal(top)}/100). ` : ''}🤖 Puntaje con el benchmark; el equipo elige uno o más con «Elegir ✓».</span></div>
+            <div class="ai-actions"><button class="btn btn-accent" data-action="decide-problems" ${LOCAL_MODE || aiBatch || !pending ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Puntuar', pending))}</button></div></div>`;
+    }
+    if (problemTab === 'elegido') {
+        return `<div class="ai-bar"><div class="ai-bar-text"><strong>Problemas elegidos</strong>
+            <span class="form-hint">Generen las preguntas «¿Cómo podríamos…?» y creen ideas de solución: van a la pestaña 3 · Soluciones.</span></div></div>`;
+    }
+    return '';
+}
+
 function renderProblemas() {
     const all = problems();
-    const list = challenges();
-    const pendingClass = all.filter(needsClass).length;
-    const groups = [...list.map(c => ({ title: `${shortId(c)} · ${c.data.title || 'Sin título'}`, items: all.filter(p => p.data.desafio_id === shortId(c)) })),
-        { title: 'Sin desafío asignado', items: all.filter(p => !challengeById(p.data.desafio_id)) }].filter(g => g.items.length);
+    const list = problemsIn(problemTab);
+    if (problemTab === 'ordenar') list.sort((a, b) => priorityValue(b) - priorityValue(a));
+    if (problemTab === 'decision' || problemTab === 'elegido') list.sort((a, b) => (problemTotal(b) ?? -1) - (problemTotal(a) ?? -1));
+    const current = findOption([...PSTAGES, PDISCARDED], problemTab);
+    const discarded = problemsIn('descartado').length;
     return `
         <div class="page-head">
             <div>
                 <h1>2 · Problemas</h1>
-                <p>Cada uno anota la idea o problema que quiere abordar, todavía sin solución. Gemini la asigna sola al desafío que mejor calza. Luego, en orden: delimitación → benchmark del problema → lluvia de soluciones.</p>
+                <p>Igual que Soluciones, en fases: lluvia → ordenar → benchmark → decisión → elegidos.</p>
             </div>
             <div class="page-head-actions">
                 ${howToButton()}
-                ${all.length && list.length ? `<button class="btn btn-ghost" data-action="classify-all" ${LOCAL_MODE || aiBatch || !pendingClass ? 'disabled' : ''}>🤖 ${escapeHtml(batchLabel('Clasificar', pendingClass))}</button>` : ''}
-                <button class="btn btn-accent" data-action="add-problem"><svg><use href="#i-plus"/></svg>Idea o problema</button>
+                <button class="btn btn-accent" data-action="add-problem"><svg><use href="#i-plus"/></svg>Problema</button>
             </div>
         </div>
         ${howToPanel()}
-        ${!list.length ? '<div class="req warn">Primero carguen los desafíos en la pestaña 1 · Desafíos: Gemini los usa para clasificar.</div>' : ''}
-        ${groups.length ? groups.map(g => `
-            <section class="panel">
-                <div class="panel-head"><h2>${escapeHtml(g.title)}</h2><span class="count">${g.items.length}</span></div>
-                <div class="rows">${g.items.map(problemCard).join('')}</div>
-            </section>`).join('') : `
+        ${!challenges().length ? '<div class="req warn">Primero carguen los desafíos en la pestaña 1 · Desafíos: Gemini los usa para clasificar.</div>' : ''}
+        <nav class="pipeline" aria-label="Fases de los problemas">
+            ${PSTAGES.map((s, i) => `
+                <button class="stage ${s.id === problemTab ? 'active' : ''}" data-action="problem-tab" data-stage="${s.id}" style="--stage:${s.color}" aria-pressed="${s.id === problemTab}">
+                    <div class="stage-step"><span class="stage-dot"></span>Fase ${i + 1}</div>
+                    <div class="stage-label">${s.label}</div>
+                    <div class="stage-count">${problemsIn(s.id).length}</div>
+                </button>`).join('')}
+        </nav>
+        <div class="board-bar">
+            <p class="stage-hint"><strong>${escapeHtml(current.label)}:</strong> ${escapeHtml(current.hint)}</p>
+            <button class="discard-tab ${problemTab === 'descartado' ? 'active' : ''}" data-action="problem-tab" data-stage="descartado">Descartados (${discarded})</button>
+        </div>
+        ${problemBar()}
+        ${problemCorrPanel()}
+        ${list.length ? `<div class="rows">${list.map(problemCard).join('')}</div>` : `
             <div class="empty">
                 <div class="empty-icon">💡</div>
-                <strong>Todavía no hay ideas ni problemas</strong>
-                Agreguen uno con «+ Idea o problema».
+                <strong>${all.length ? 'No hay problemas en esta fase' : 'Todavía no hay problemas'}</strong>
+                ${problemTab === 'lluvia' ? 'Agreguen uno con «+ Problema».' : ''}
             </div>`}`;
 }
 
@@ -711,8 +960,48 @@ const challengeActions = {
 const problemActions = {
     'add-problem': () => {
         const id = nextShortId(PRO_PREFIX, 'P');
-        saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: '', text: '', affected: '', reach: '', evidence: '', approach: '', payer: '', out_of_scope: '' }, nextPosition('setting')));
+        problemTab = 'lluvia';
+        saveItem(makeItem(`${PRO_PREFIX}${id}`, 'setting', { desafio_id: '', text: '', affected: '', reach: '', evidence: '', approach: '', payer: '', out_of_scope: '', stage: 'lluvia' }, nextPosition('setting')));
     },
+    'problem-tab': (el) => {
+        problemTab = el.dataset.stage;
+        render();
+    },
+    'problem-stage': async (el) => {
+        await setProblemStage(el.dataset.id, el.dataset.stage);
+        render();
+        showToast(`✓ ${el.dataset.id} → ${findOption(PSTAGES, el.dataset.stage).label}`);
+    },
+    'discard-problem': async (el) => {
+        const reason = prompt(`Motivo para descartar ${el.dataset.id}:`, 'No es prioritario');
+        if (reason === null) return;
+        await setProblemStage(el.dataset.id, 'descartado', { discard_reason: reason });
+        render();
+    },
+    'send-problems': async () => {
+        const list = problemsIn('lluvia').filter(p => String(p.data.text || '').trim());
+        for (const p of list) await setProblemStage(shortId(p), 'ordenar');
+        problemTab = 'ordenar';
+        render();
+        showToast(`✓ ${list.length} problema(s) a Ordenar`);
+    },
+    'promote-good': async () => {
+        const list = problemsIn('ordenar').filter(p => priorityValue(p) >= 4);
+        if (!confirm(`¿Pasar al Benchmark: ${list.map(shortId).join(', ')}?`)) return;
+        for (const p of list) await setProblemStage(shortId(p), 'benchmark');
+        problemTab = 'benchmark';
+        render();
+    },
+    'prioritize-one': (el) => runOne(prioritizeProblem, problemById(el.dataset.id), `${el.dataset.id} priorizado`),
+    'prioritize-all': () => runAiBatch('Priorizar', problemsIn('ordenar').filter(needsPriority), prioritizeProblem),
+    'problem-similarity': () => findProblemSimilarity(),
+    'merge-problems': (el) => mergeProblems(Number(el.dataset.index)),
+    'dismiss-corr': (el) => {
+        problemCorr.groups.splice(Number(el.dataset.index), 1);
+        render();
+    },
+    'decide-problem': (el) => runOne(decideProblem, problemById(el.dataset.id), `Puntaje de ${el.dataset.id} listo`),
+    'decide-problems': () => runAiBatch('Puntuar', problemsIn('decision').filter(needsProblemDecision), decideProblem),
     'delete-problem': (el) => {
         const p = problemById(el.dataset.id);
         if (p && confirm(`¿Eliminar ${el.dataset.id}? Las ideas de solución se mantienen.`)) deleteItem(p.id);

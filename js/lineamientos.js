@@ -201,6 +201,38 @@ window.LINEAMIENTOS = {
         ]
     },
 
+    // 2 · Problemas en fases, igual que Soluciones: Lluvia → Ordenar → Benchmark → Decisión → Elegidos.
+    PROBLEM_STAGES: [
+        { id: 'lluvia', label: 'Lluvia de problemas', color: 'var(--k-s1)', hint: 'Anoten todos los problemas en una línea y quién lo sufre, sin evaluar. Gemini los asigna solos a un desafío. Al terminar, mándenlos a Ordenar.' },
+        { id: 'ordenar', label: 'Ordenar', color: 'var(--k-s2)', hint: '🔗 Similitud entre problemas (fusionar o no) y 🤖 puntaje de priorización 1–5: 5 sí, 4 probable, 3 tal vez, 2 o menos no. El equipo pasa al Benchmark los que quiera.' },
+        { id: 'benchmark', label: 'Benchmark', color: 'var(--k-t3)', hint: 'Delimitación del problema + prompt → IA investigadora → informe → 🤖 matriz del problema.' },
+        { id: 'decision', label: 'Decisión', color: 'var(--k-s4)', hint: '🤖 Puntaje con el benchmark: magnitud, alineación con el desafío, alcance en Latinoamérica, oportunidad y acceso a validar. El equipo elige.' },
+        { id: 'elegido', label: 'Elegidos', color: 'var(--k-s5)', hint: 'Problemas a resolver: 🤖 preguntas «¿Cómo podríamos…?» y lluvia de soluciones (pestaña 3).' }
+    ],
+
+    // Ordenar: ¿vale la pena investigar este problema? (primer puntaje, rápido).
+    PROBLEM_PRIORITY: {
+        TASK: 'Evalúa rápido si vale la pena que un equipo universitario del Rally Latinoamericano de Innovación (28 horas) investigue a fondo este problema. Usa solo lo escrito y el resumen del desafío; no inventes datos.',
+        FIELDS: [
+            { id: 'prioridad', instruccion: 'Puntaje: 5 = sí, es concreto, está dentro del desafío, es relevante y hay espacio para innovar; 4 = probablemente sí; 3 = tal vez, le falta claridad o relevancia; 2 = no, es vago, está fuera del desafío o es una solución disfrazada; 1 = descartar.', opciones: ['1', '2', '3', '4', '5'] },
+            { id: 'motivo', instruccion: 'Por qué ese puntaje, en una frase de máximo 20 palabras.' },
+            { id: 'mejorar', instruccion: 'Qué le falta al planteamiento para subir el puntaje, en una frase (vacío si nada).' }
+        ],
+        LEVELS: { 5: { label: 'Sí', color: 'var(--k-good)' }, 4: { label: 'Probable', color: 'var(--k-good)' }, 3: { label: 'Tal vez', color: 'var(--k-s4)' }, 2: { label: 'No', color: 'var(--k-bad)' }, 1: { label: 'Descartar', color: 'var(--k-bad)' } }
+    },
+
+    // Decisión: ¿cuál problema resolvemos? (segundo puntaje, con el benchmark).
+    PROBLEM_DECISION: {
+        TASK: 'Eres jurado del Rally Latinoamericano de Innovación 2025. Con el benchmark del problema, puntúa de 1 (muy débil) a 5 (excelente) qué tan buen problema es para que un equipo universitario lo resuelva en 28 horas. El jurado valora problemas relevantes que se repiten en varios países de Latinoamérica. Usa solo los insumos; no inventes datos.',
+        CRITERIA: [
+            { id: 'magnitud', label: 'Magnitud', instruccion: 'A cuántas personas u organizaciones afecta y qué tan grave es, según las cifras del benchmark.' },
+            { id: 'alineacion', label: 'Alineación con el desafío', instruccion: 'Qué tan en el centro del desafío está.' },
+            { id: 'latam', label: 'Alcance en Latinoamérica', instruccion: 'Si el problema se repite en varios países de Latinoamérica.' },
+            { id: 'oportunidad', label: 'Oportunidad de innovar', instruccion: 'Si el benchmark muestra brechas que las soluciones existentes no cubren.' },
+            { id: 'validacion', label: 'Acceso a validar', instruccion: 'Si el equipo podría hablar con afectados o expertos durante las 28 horas.' }
+        ]
+    },
+
     // País de la sede. El Rally se evalúa también a nivel nacional y latinoamericano:
     // las matrices piden soluciones adaptables a la mayor cantidad de países de la región.
     SEDE_COUNTRY: 'Chile',

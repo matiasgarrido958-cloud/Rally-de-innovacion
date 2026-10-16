@@ -34,22 +34,21 @@ El proceso parte por el problema, no por la solución, y la IA hace el trabajo p
 1. **Desafíos** (pestaña *1 · Desafíos*): el día de la apertura se ingresan los desafíos (basta el
    nombre; el texto de las bases es opcional). 🤖 *Resumir* pide a Gemini un resumen breve: de qué
    trata, qué incluye, qué queda fuera, actores clave y palabras clave (`CHALLENGE_SUMMARY`).
-2. **Problemas** (pestaña *2 · Problemas*): cada uno anota la idea o problema que quiere abordar,
-   todavía sin solución. Cada tarjeta avanza por pasos numerados (solo queda abierto el que toca):
-   1. **Idea** y quién lo sufre.
-   2. **Desafío**: al salir del campo, Gemini la **clasifica sola** en el desafío que mejor calza, con
-      calce alto/medio/bajo y motivo (`PROBLEM_CLASSIFY`). Se puede cambiar a mano; entonces la
-      clasificación automática ya no lo pisa. La pestaña agrupa los problemas por desafío.
-   3. **Delimitación**: alcance (a cuántos y dónde), qué abordaremos, qué queda fuera, quién pagaría y
-      evidencia. Revisión opcional del planteamiento con Gemini (`PROBLEM_CHECK`).
-   4. **Benchmark del problema**: *Copiar prompt de investigación* (armado con el desafío y la
-      delimitación) → se pega en el modo investigador de Claude, ChatGPT, Gemini o Perplexity → se
-      pega el informe → 🤖 *Procesar informe* lo compacta en una **matriz estándar**: a cuántos afecta,
-      dónde, causas, quién paga hoy, qué se hace en el mundo, brechas, tendencia, normativa en Chile,
-      riesgos y fuentes (`PROBLEM_BENCHMARK`).
-   5. **Soluciones**: *+ Idea de solución* abre una idea en *3 · Soluciones* con el desafío, el
-      problema, el alcance, el abordaje, quién paga y el beneficiario ya llenos, y la matriz del
-      benchmark a la vista.
+2. **Problemas** (pestaña *2 · Problemas*): en fases, igual que Soluciones (`PROBLEM_STAGES`):
+   1. **Lluvia de problemas**: cada uno anota problemas, sin solución, y quién lo sufre. Al salir del
+      campo, Gemini lo **clasifica** en el desafío que calza (`PROBLEM_CLASSIFY`; si se cambia a mano,
+      ya no lo pisa). *Mandar a Ordenar* los pasa todos.
+   2. **Ordenar**: 🔗 *Similitud* compara los problemas (% de similitud, si conviene fusionar o no, y
+      *Fusionar* crea uno nuevo y descarta los originales). 🤖 *Priorizar* da el **primer puntaje,
+      1–5** (`PROBLEM_PRIORITY`): 5 sí · 4 probable · 3 tal vez · 2 o menos no. Sin máximo: cada uno
+      pasa con *Benchmark →*, o todos los ≥4 con un botón.
+   3. **Benchmark**: delimitación (alcance, qué abordaremos, qué queda fuera, quién pagaría,
+      evidencia) → *Copiar prompt* → IA investigadora → pegar informe → 🤖 matriz (`PROBLEM_BENCHMARK`).
+   4. **Decisión**: 🤖 *Puntuar* da el **segundo puntaje**, con el benchmark (`PROBLEM_DECISION`):
+      magnitud, alineación, alcance en Latinoamérica, oportunidad y acceso a validar, 1–5 cada uno,
+      total sobre 100. El equipo elige con *Elegir ✓*.
+   5. **Elegidos**: 🤖 preguntas «¿Cómo podríamos…?» y *+ Idea de solución* (pestaña 3).
+   Los descartados guardan su motivo y se pueden restaurar.
 3. **Soluciones** (pestaña *3 · Soluciones*), en 5 etapas:
    1. **Lluvia de ideas**: todas las soluciones, sin evaluar.
    2. **Ordenar**: 🔗 *Buscar correlaciones* da el **% de similitud** y si conviene **fusionar**; 🤖 el
